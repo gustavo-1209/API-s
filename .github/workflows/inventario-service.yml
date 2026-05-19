@@ -1,0 +1,33 @@
+name: Build inventario-service
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "inventario-service/**"
+      - ".github/workflows/inventario-service.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Login to Azure Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build and push inventario-service image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./inventario-service
+          file: ./inventario-service/Dockerfile
+          push: true
+          tags: ${{ secrets.ACR_LOGIN_SERVER }}/inventario-service:latest
