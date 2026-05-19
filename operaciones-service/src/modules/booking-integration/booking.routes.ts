@@ -10,16 +10,29 @@ const INVENTARIO_URL = process.env['INVENTARIO_SERVICE_URL'] ?? 'http://localhos
 async function fetchVehiculo(vehiculoId: string): Promise<any | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 5_000);
+
   try {
     const res = await fetch(
       `${INVENTARIO_URL}/api/v1/gustavobenalcazar/vehiculos/booking/${vehiculoId}`,
       { signal: controller.signal },
     );
+
     if (!res.ok) return null;
+
     const body = await res.json() as { success: boolean; data: any };
-    return body.success ? body.data : null;
-  } catch { return null; }
-  finally { clearTimeout(timer); }
+    if (!body.success || !body.data) return null;
+
+    const vehiculo = body.data;
+
+    return {
+      ...vehiculo,
+      precioDia: vehiculo.precioDia ?? vehiculo.precioPorDia,
+    };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function generarCodigo(): string {
