@@ -12,7 +12,7 @@ async function fetchVehiculo(vehiculoId: string): Promise<any | null> {
   const timer = setTimeout(() => controller.abort(), 5_000);
   try {
     const res = await fetch(
-      `${INVENTARIO_URL}/api/v1/gustavobenalcazar/vehiculos/${vehiculoId}`,
+      `${INVENTARIO_URL}/api/v1/gustavobenalcazar/vehiculos/booking/${vehiculoId}`,
       { signal: controller.signal },
     );
     if (!res.ok) return null;
