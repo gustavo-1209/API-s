@@ -120,7 +120,7 @@ export function createBookingGatewayRouter(): Router {
     forwardRequest(req, res, 'operaciones', '/api/v1/gustavobenalcazar/canales-venta'),
   );
 
-  router.post('/reservas', (req, res) =>
+    router.post('/reservas', (req, res) =>
     forwardRequest(req, res, 'operaciones', '/api/v1/gustavobenalcazar/reservas/booking'),
   );
 
@@ -128,13 +128,30 @@ export function createBookingGatewayRouter(): Router {
     forwardRequest(req, res, 'operaciones', `/api/v1/gustavobenalcazar/reservas/booking/${req.params.id}`),
   );
 
-  router.patch('/reservas/:id', (req, res) =>
-    forwardRequest(req, res, 'operaciones', `/api/v1/gustavobenalcazar/reservas/booking/${req.params.id}`),
+  router.patch('/reservas/:id', (req, res) => {
+    const body = { ...(req.body ?? {}) };
+
+    if (body.estado && !body.status) {
+      body.status = body.estado;
+    }
+
+    delete body.estado;
+    req.body = body;
+
+    return forwardRequest(
+      req,
+      res,
+      'operaciones',
+      `/api/v1/gustavobenalcazar/reservas/booking/${req.params.id}`,
+    );
+  });
+
+  router.post('/alquileres', (req, res) =>
+    forwardRequest(req, res, 'operaciones', '/api/v1/gustavobenalcazar/alquileres/booking'),
   );
 
-  // Financiero
-  router.get('/payment/:reservaId', (req, res) =>
-    forwardRequest(req, res, 'financiero', `/api/v1/gustavobenalcazar/payment/booking/${req.params.reservaId}`),
+  router.post('/devoluciones', (req, res) =>
+    forwardRequest(req, res, 'operaciones', '/api/v1/gustavobenalcazar/devoluciones/booking'),
   );
 
   return router;
