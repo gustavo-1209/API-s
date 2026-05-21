@@ -154,5 +154,10 @@ export function createBookingGatewayRouter(): Router {
     forwardRequest(req, res, 'operaciones', '/api/v1/gustavobenalcazar/devoluciones/booking'),
   );
 
+    // Financiero
+  router.get('/payment/:reservaId', (req, res) =>
+    forwardRequest(req, res, 'financiero', `/api/v1/gustavobenalcazar/payment/booking/${req.params.reservaId}`),
+  );
+
   return router;
 }
