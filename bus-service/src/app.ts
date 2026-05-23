@@ -4,6 +4,7 @@ import cors from 'cors';
 import { createOrchestratorRouter } from './modules/orchestrator/orchestrator.routes.js';
 import { isSenderConnected } from './shared/bus/service-bus.js';
 import { createBookingGatewayRouter } from './modules/booking-gateway/booking-gateway.routes.js';
+import { createAdminGatewayRouter } from './modules/admin-gateway/admin-gateway.routes.js';
 
 const app = express();
 
@@ -22,6 +23,7 @@ app.get('/health', (_req, res) => {
 
 app.use('/api/v1/gustavobenalcazar/bus', createOrchestratorRouter());
 app.use('/api/v1/gustavobenalcazar/booking', createBookingGatewayRouter());
+app.use('/api/v1/gustavobenalcazar/admin', createAdminGatewayRouter());
 
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('[bus-service] error:', err);
