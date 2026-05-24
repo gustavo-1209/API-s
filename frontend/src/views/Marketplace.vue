@@ -5,12 +5,15 @@ import UiEmptyState from '@/components/ui/UiEmptyState.vue';
 import UiErrorAlert from '@/components/ui/UiErrorAlert.vue';
 import UiSpinner from '@/components/ui/UiSpinner.vue';
 import { useVehiculos } from '@/composables/useVehiculos';
-import type { VehiculoCard, VehiculoStatus } from '@/types/vehiculo';
+import {
+  isVehiculoReservable,
+  vehicleStatusBadgeClass,
+  vehicleStatusLabel,
+} from '@/lib/vehicle-status';
+import type { VehiculoCard } from '@/types/vehiculo';
 
 const router = useRouter();
 const { vehiculos, loading, error, fetchMarketplace } = useVehiculos();
-
-const DISPONIBLE_STATUSES: VehiculoStatus[] = ['DISPONIBLE'];
 
 onMounted(() => {
   void fetchMarketplace();
@@ -27,9 +30,17 @@ function formatPrecio(precio: number): string {
 function isDisponible(vehiculo: VehiculoCard): boolean {
   if (vehiculo.disponible === false) return false;
   if (vehiculo.reservaActiva === true) return false;
+  return isVehiculoReservable(vehiculo.status);
+}
 
-  const status = (vehiculo.status ?? '').toUpperCase();
-  return DISPONIBLE_STATUSES.includes(status as VehiculoStatus) || status === 'AVAILABLE';
+function badgeTexto(vehiculo: VehiculoCard): string {
+  if (isDisponible(vehiculo)) return 'Disponible';
+  return vehicleStatusLabel(vehiculo.status);
+}
+
+function badgeClases(vehiculo: VehiculoCard): string {
+  if (isDisponible(vehiculo)) return 'bg-emerald-100 text-emerald-800';
+  return vehicleStatusBadgeClass(vehiculo.status);
 }
 
 function reservar(vehiculo: VehiculoCard): void {
@@ -89,13 +100,10 @@ function reservar(vehiculo: VehiculoCard): void {
           </div>
           <span
             class="absolute right-3 top-3 rounded-full px-2.5 py-0.5 text-xs font-semibold"
-            :class="
-              isDisponible(vehiculo)
-                ? 'bg-emerald-100 text-emerald-800'
-                : 'bg-slate-200 text-slate-700'
-            "
+            :class="badgeClases(vehiculo)"
+            :title="vehiculo.status ? `Estado: ${vehiculo.status}` : undefined"
           >
-            {{ isDisponible(vehiculo) ? 'Disponible' : 'No disponible' }}
+            {{ badgeTexto(vehiculo) }}
           </span>
         </div>
 
@@ -124,7 +132,7 @@ function reservar(vehiculo: VehiculoCard): void {
             :disabled="!isDisponible(vehiculo)"
             @click="reservar(vehiculo)"
           >
-            {{ isDisponible(vehiculo) ? 'Reservar' : 'No disponible' }}
+            {{ isDisponible(vehiculo) ? 'Reservar' : badgeTexto(vehiculo) }}
           </button>
         </div>
       </article>

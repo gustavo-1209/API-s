@@ -1,4 +1,6 @@
+import { obtenerAlquilerDeCache } from '@/lib/alquiler-reserva-cache';
 import type {
+  AdminAlquilerActivoIndex,
   AdminCatalogMaps,
   AdminReservaRow,
   AdminTableRow,
@@ -410,6 +412,76 @@ function resolveReservaCliente(r: Record<string, unknown>): string {
   if (clienteId) return `Cliente ${shortId(clienteId)}`;
 
   return '—';
+}
+
+function resolveAlquilerReservaId(r: Record<string, unknown>): string {
+  const direct = getString(r, ['reservaId']);
+  if (direct) return direct;
+
+  const reserva = r.reserva;
+  if (reserva && typeof reserva === 'object') {
+    return getString(reserva as Record<string, unknown>, ['id', 'reservaId']);
+  }
+
+  return '';
+}
+
+/** Normaliza un ítem de GET /alquileres?status=ACTIVO */
+export function normalizeAdminAlquilerActivo(raw: unknown): AdminAlquilerActivoIndex | null {
+  const r = asRecord(raw);
+  const alquilerId = getString(r, ['id']);
+  const reservaId = resolveAlquilerReservaId(r);
+  if (!alquilerId || !reservaId) return null;
+
+  return {
+    alquilerId,
+    kmSalida: getNumber(r, ['kmSalida']),
+  };
+}
+
+/** Construye índice reservaId → alquiler activo. */
+export function buildAlquileresActivosIndex(rawList: unknown[]): Map<string, AdminAlquilerActivoIndex> {
+  const map = new Map<string, AdminAlquilerActivoIndex>();
+  for (const raw of rawList) {
+    const entry = normalizeAdminAlquilerActivo(raw);
+    if (!entry) continue;
+    const reservaId = resolveAlquilerReservaId(asRecord(raw));
+    if (reservaId) map.set(reservaId, entry);
+  }
+  return map;
+}
+
+function normalizarEstadoReserva(estado: string): string {
+  return estado.trim().toUpperCase();
+}
+
+/** Enriquece filas ACTIVA con alquilerId/kmSalida (API + sessionStorage). */
+export function enrichAdminReservasConAlquiler(
+  rows: AdminReservaRow[],
+  alquileresPorReserva: Map<string, AdminAlquilerActivoIndex>,
+): AdminReservaRow[] {
+  return rows.map((row) => {
+    if (normalizarEstadoReserva(row.estado) !== 'ACTIVA') {
+      return row;
+    }
+
+    const fromApi = alquileresPorReserva.get(row.id);
+    const fromCache = obtenerAlquilerDeCache(row.id);
+
+    const alquilerId = fromApi?.alquilerId ?? fromCache?.alquilerId ?? null;
+    const kmSalida =
+      fromApi?.kmSalida ??
+      (fromCache?.kmSalida !== undefined ? fromCache.kmSalida : null) ??
+      null;
+
+    if (!alquilerId && kmSalida === null) return row;
+
+    return {
+      ...row,
+      alquilerId,
+      kmSalida,
+    };
+  });
 }
 
 export function normalizeAdminReserva(
