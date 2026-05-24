@@ -25,6 +25,9 @@ function formatPrecio(precio: number): string {
 }
 
 function isDisponible(vehiculo: VehiculoCard): boolean {
+  if (vehiculo.disponible === false) return false;
+  if (vehiculo.reservaActiva === true) return false;
+
   const status = (vehiculo.status ?? '').toUpperCase();
   return DISPONIBLE_STATUSES.includes(status as VehiculoStatus) || status === 'AVAILABLE';
 }

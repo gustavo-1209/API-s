@@ -1,11 +1,24 @@
 import { isAxiosError } from 'axios';
 import { bookingApi } from '@/api/api';
-import { unwrapApiData } from '@/lib/api-unwrap';
+import {
+  normalizeCrearReservaResponse,
+  normalizePaymentResponse,
+  normalizeReservaDetalleResponse,
+} from '@/mappers/reserva.mapper';
+import { normalizeVehiculoDisponibilidadResponse } from '@/mappers/vehiculo-marketplace.mapper';
 import type {
   CrearReservaRequest,
   CrearReservaResponse,
+  PaymentResponse,
   ReservaApiResponse,
+  ReservaDetalleResponse,
 } from '@/types/reserva';
+import type { VehiculoDisponibilidadResponse } from '@/types/vehiculo';
+
+const MSG_RESERVA_ACTIVA_AMIGABLE =
+  'Este vehículo ya tiene una reserva activa. Puedes volver al catálogo y elegir otro vehículo.';
+
+const PATRON_RESERVA_ACTIVA = 'ya tiene una reserva activa';
 
 export class ReservaServiceError extends Error {
   constructor(
@@ -34,7 +47,7 @@ function messageFromResponseData(data: unknown): string | undefined {
   return undefined;
 }
 
-function extractErrorMessage(err: unknown): ReservaServiceError {
+function extractErrorMessage(err: unknown, fallback: string): ReservaServiceError {
   if (isAxiosError(err)) {
     const status = err.response?.status;
     const backendMsg = messageFromResponseData(err.response?.data);
@@ -49,41 +62,21 @@ function extractErrorMessage(err: unknown): ReservaServiceError {
       return new ReservaServiceError(backendMsg, 400);
     }
 
-    return new ReservaServiceError(
-      backendMsg ?? 'No se pudo confirmar la reserva. Intenta de nuevo.',
-      status,
-    );
+    return new ReservaServiceError(backendMsg ?? fallback, status);
   }
 
   if (err instanceof Error) {
     return new ReservaServiceError(err.message);
   }
 
-  return new ReservaServiceError('Error inesperado al confirmar la reserva.');
+  return new ReservaServiceError(fallback);
 }
 
-function normalizeCrearReservaResponse(body: unknown): CrearReservaResponse {
-  const raw = unwrapApiData<Record<string, unknown>>(body);
-  const id = String(raw.id ?? raw.reservaId ?? '');
-  if (!id) {
-    throw new ReservaServiceError('Respuesta inválida del servidor de reservas.');
+function assertSuccessWrapper(data: unknown, fallback: string): void {
+  if (data && typeof data === 'object' && 'success' in data && (data as ReservaApiResponse<unknown>).success === false) {
+    const wrapped = data as ReservaApiResponse<unknown>;
+    throw new ReservaServiceError(wrapped.error?.message ?? wrapped.message ?? fallback);
   }
-
-  return {
-    id,
-    codigoReserva:
-      typeof raw.codigoReserva === 'string'
-        ? raw.codigoReserva
-        : typeof raw.codigo === 'string'
-          ? raw.codigo
-          : undefined,
-    vehiculoId: typeof raw.vehiculoId === 'string' ? raw.vehiculoId : undefined,
-    clienteId: typeof raw.clienteId === 'string' ? raw.clienteId : undefined,
-    fechaInicio: typeof raw.fechaInicio === 'string' ? raw.fechaInicio : undefined,
-    fechaFin: typeof raw.fechaFin === 'string' ? raw.fechaFin : undefined,
-    status: typeof raw.status === 'string' ? raw.status : undefined,
-    totalAmount: raw.totalAmount as number | string | undefined,
-  };
 }
 
 export async function crearReserva(body: CrearReservaRequest): Promise<CrearReservaResponse> {
@@ -93,19 +86,60 @@ export async function crearReserva(body: CrearReservaRequest): Promise<CrearRese
       body,
     );
 
-    if (data && typeof data === 'object' && 'success' in data && data.success === false) {
-      throw new ReservaServiceError(
-        data.error?.message ?? data.message ?? 'No se pudo confirmar la reserva.',
-      );
-    }
+    assertSuccessWrapper(data, 'No se pudo crear la reserva.');
 
     return normalizeCrearReservaResponse(data);
   } catch (err: unknown) {
     if (err instanceof ReservaServiceError) throw err;
-    throw extractErrorMessage(err);
+    throw extractErrorMessage(err, 'No se pudo crear la reserva. Intenta de nuevo.');
   }
 }
 
+export async function obtenerReserva(reservaId: string): Promise<ReservaDetalleResponse> {
+  try {
+    const { data } = await bookingApi.get<unknown>(`/reservas/${reservaId}`);
+    assertSuccessWrapper(data, 'No se pudo obtener el detalle de la reserva.');
+    return normalizeReservaDetalleResponse(data);
+  } catch (err: unknown) {
+    if (err instanceof ReservaServiceError) throw err;
+    throw extractErrorMessage(err, 'No se pudo obtener el detalle de la reserva.');
+  }
+}
+
+export async function consultarPago(reservaId: string): Promise<PaymentResponse> {
+  try {
+    const { data } = await bookingApi.get<unknown>(`/payment/${reservaId}`);
+    assertSuccessWrapper(data, 'No se pudo consultar el estado de pago.');
+    return normalizePaymentResponse(data, reservaId);
+  } catch (err: unknown) {
+    if (err instanceof ReservaServiceError) throw err;
+    throw extractErrorMessage(err, 'No se pudo consultar el estado de pago.');
+  }
+}
+
+export function esErrorReservaActiva(err: ReservaServiceError): boolean {
+  return err.message.trim().toLowerCase().includes(PATRON_RESERVA_ACTIVA);
+}
+
 export function mensajeErrorReserva(err: ReservaServiceError): string {
+  if (esErrorReservaActiva(err)) {
+    return MSG_RESERVA_ACTIVA_AMIGABLE;
+  }
   return err.message;
+}
+
+/**
+ * Consulta disponibilidad en inventario. Si el endpoint falla, devuelve null
+ * (no bloquear el flujo; la validación definitiva queda en POST /reservas).
+ */
+export async function verificarDisponibilidadVehiculo(
+  vehiculoId: string,
+): Promise<VehiculoDisponibilidadResponse | null> {
+  try {
+    const { data } = await bookingApi.get<unknown>(`/vehiculos/${vehiculoId}/disponibilidad`);
+    assertSuccessWrapper(data, 'No se pudo verificar disponibilidad.');
+    return normalizeVehiculoDisponibilidadResponse(data);
+  } catch {
+    return null;
+  }
 }

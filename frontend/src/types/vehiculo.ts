@@ -47,9 +47,21 @@ export interface Vehiculo {
   imagenUrl?: string | null;
   descripcion?: string | null;
   status?: VehiculoStatus | null;
+  /** Solo si el backend lo envía en el DTO. */
+  disponible?: boolean | null;
+  /** Solo si el backend lo envía en el DTO. */
+  reservaActiva?: boolean | null;
   isActive?: boolean | null;
   modelo?: Modelo | null;
   categoria?: Categoria | null;
+}
+
+/** Respuesta de GET /vehiculos/{id}/disponibilidad (Booking Gateway). */
+export interface VehiculoDisponibilidadResponse {
+  vehiculoId: string;
+  disponible: boolean;
+  status?: string | null;
+  mensaje?: string | null;
 }
 
 /** Respuesta estándar del backend RentWheels (bus-service). */
@@ -81,4 +93,8 @@ export interface VehiculoCard {
   precioDia: number;
   imagenUrl: string | null;
   status: VehiculoStatus;
+  /** Solo si el backend lo envía en el listado. */
+  disponible?: boolean;
+  /** Solo si el backend lo envía en el listado. */
+  reservaActiva?: boolean;
 }

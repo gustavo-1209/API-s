@@ -32,6 +32,21 @@ export interface CrearReservaRequest {
   fechaFin: string;
 }
 
+export type ReservaEstado =
+  | 'PENDIENTE'
+  | 'CONFIRMADA'
+  | 'ACTIVA'
+  | 'COMPLETADA'
+  | 'CANCELADA'
+  | (string & {});
+
+export type PaymentStatus =
+  | 'SIN_PAGOS'
+  | 'PENDIENTE'
+  | 'COMPLETADO'
+  | 'PARCIAL'
+  | (string & {});
+
 export interface CrearReservaResponse {
   id: string;
   codigoReserva?: string;
@@ -39,8 +54,39 @@ export interface CrearReservaResponse {
   clienteId?: string;
   fechaInicio?: string;
   fechaFin?: string;
-  status?: string;
+  status?: ReservaEstado;
   totalAmount?: number | string;
+  diasTotal?: number;
+}
+
+/** Detalle de GET /reservas/{id}. */
+export interface ReservaDetalleResponse {
+  id: string;
+  codigoReserva?: string;
+  vehiculoId?: string;
+  clienteId?: string;
+  agenciaId?: string;
+  fechaInicio?: string;
+  fechaFin?: string;
+  diasTotal?: number;
+  totalAmount?: number | string;
+  status: ReservaEstado;
+}
+
+export interface PagoResumenItem {
+  id: string;
+  monto?: number | string;
+  metodoPago?: string;
+  referencia?: string;
+  status?: string;
+}
+
+/** Resumen de GET /payment/{reservaId}. */
+export interface PaymentResponse {
+  reservaId: string;
+  status: PaymentStatus;
+  totalPagado: number;
+  pagos: PagoResumenItem[];
 }
 
 export interface ReservaApiError {

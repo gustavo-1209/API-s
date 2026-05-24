@@ -6,17 +6,37 @@ import { bookingApi } from '@/api/api';
 import {
   calcularDiasReserva,
   calcularTotalReserva,
+  paymentStatusHint,
+  paymentStatusLabel,
 } from '@/mappers/reserva.mapper';
 import { normalizeVehiculoMarketplace } from '@/mappers/vehiculo-marketplace.mapper';
-import { crearReserva, mensajeErrorReserva, ReservaServiceError } from '@/composables/useReservas';
+import {
+  consultarPago,
+  crearReserva,
+  esErrorReservaActiva,
+  mensajeErrorReserva,
+  obtenerReserva,
+  ReservaServiceError,
+  verificarDisponibilidadVehiculo,
+} from '@/composables/useReservas';
 import { unwrapApiData, unwrapApiList } from '@/lib/api-unwrap';
 import { resolveClienteId } from '@/lib/cliente-id';
 import UiErrorAlert from '@/components/ui/UiErrorAlert.vue';
 import UiSpinner from '@/components/ui/UiSpinner.vue';
 import { formatDisplayDate, formatDisplayMoney } from '@/lib/format';
 import { useAuthStore } from '@/stores/auth';
-import type { CanalVenta, CrearReservaRequest, CrearReservaResponse, Seguro, Tarifa } from '@/types/reserva';
-import type { VehiculoMarketplace } from '@/types/vehiculo';
+import type {
+  CanalVenta,
+  CrearReservaRequest,
+  CrearReservaResponse,
+  PaymentResponse,
+  ReservaDetalleResponse,
+  Seguro,
+  Tarifa,
+} from '@/types/reserva';
+import type { VehiculoDisponibilidadResponse, VehiculoMarketplace } from '@/types/vehiculo';
+
+const AVISO_NO_DISPONIBLE = 'Este vehículo no está disponible para reserva en este momento.';
 
 const route = useRoute();
 const router = useRouter();
@@ -33,6 +53,7 @@ const canalVentaId = ref('');
 const loading = ref(true);
 const loadError = ref<string | null>(null);
 const submitting = ref(false);
+const enriching = ref(false);
 const submitError = ref<string | null>(null);
 
 const vehiculo = ref<VehiculoMarketplace | null>(null);
@@ -40,8 +61,16 @@ const seguros = ref<Seguro[]>([]);
 const tarifas = ref<Tarifa[]>([]);
 const canalesVenta = ref<CanalVenta[]>([]);
 const reservaCreada = ref<CrearReservaResponse | null>(null);
+const reservaDetalle = ref<ReservaDetalleResponse | null>(null);
+const paymentInfo = ref<PaymentResponse | null>(null);
+const detalleWarning = ref<string | null>(null);
+const paymentWarning = ref<string | null>(null);
+const disponibilidad = ref<VehiculoDisponibilidadResponse | null>(null);
+const submitEsConflictoReserva = ref(false);
 
 const clienteId = computed(() => resolveClienteId(authStore.user, authStore.token));
+
+const reservaActiva = computed(() => reservaDetalle.value ?? reservaCreada.value);
 
 const dias = computed(() => {
   if (!fechaInicio.value || !fechaFin.value) return 0;
@@ -70,25 +99,37 @@ const minFin = computed(() => {
 const hoy = new Date().toISOString().slice(0, 10);
 
 const reservaCodigo = computed(
-  () => reservaCreada.value?.codigoReserva ?? reservaCreada.value?.id ?? '',
+  () => reservaActiva.value?.codigoReserva ?? reservaActiva.value?.id ?? '',
 );
 
+const reservaEstado = computed(() => reservaActiva.value?.status ?? 'PENDIENTE');
+
 const reservaFechaInicio = computed(() =>
-  formatDisplayDate(reservaCreada.value?.fechaInicio ?? fechaInicio.value),
+  formatDisplayDate(reservaActiva.value?.fechaInicio ?? fechaInicio.value),
 );
 
 const reservaFechaFin = computed(() =>
-  formatDisplayDate(reservaCreada.value?.fechaFin ?? fechaFin.value),
+  formatDisplayDate(reservaActiva.value?.fechaFin ?? fechaFin.value),
 );
 
 const reservaTotal = computed(() => {
-  const fromApi = reservaCreada.value?.totalAmount;
+  const fromApi = reservaActiva.value?.totalAmount;
   if (fromApi !== undefined && fromApi !== null && fromApi !== '') {
     return formatDisplayMoney(fromApi);
   }
   if (dias.value > 0) return formatDisplayMoney(totalEstimado.value);
   return '—';
 });
+
+const paymentLabel = computed(() =>
+  paymentInfo.value ? paymentStatusLabel(paymentInfo.value.status) : null,
+);
+
+const paymentHint = computed(() =>
+  paymentInfo.value ? paymentStatusHint(paymentInfo.value.status) : null,
+);
+
+const bloqueadoPorDisponibilidad = computed(() => disponibilidad.value?.disponible === false);
 
 const formValido = computed(
   () =>
@@ -100,7 +141,8 @@ const formValido = computed(
     Boolean(fechaFin.value) &&
     dias.value > 0 &&
     Boolean(vehiculo.value) &&
-    (vehiculo.value?.precioPorDia ?? 0) > 0,
+    (vehiculo.value?.precioPorDia ?? 0) > 0 &&
+    !bloqueadoPorDisponibilidad.value,
 );
 
 function mapSeguro(raw: unknown): Seguro | null {
@@ -154,9 +196,37 @@ function catalogLabel(nombre: string | undefined, id: string): string {
   return nombre?.trim() || id;
 }
 
+async function enriquecerReservaCreada(reservaId: string): Promise<void> {
+  enriching.value = true;
+  detalleWarning.value = null;
+  paymentWarning.value = null;
+  reservaDetalle.value = null;
+  paymentInfo.value = null;
+
+  try {
+    reservaDetalle.value = await obtenerReserva(reservaId);
+  } catch {
+    detalleWarning.value =
+      'La reserva fue creada, pero no se pudo actualizar el detalle desde el servidor.';
+  }
+
+  try {
+    paymentInfo.value = await consultarPago(reservaId);
+  } catch {
+    paymentWarning.value = 'No se pudo consultar el estado de pago.';
+  } finally {
+    enriching.value = false;
+  }
+}
+
+async function consultarDisponibilidad(): Promise<void> {
+  disponibilidad.value = await verificarDisponibilidadVehiculo(vehiculoId.value);
+}
+
 async function cargarDatos(): Promise<void> {
   loading.value = true;
   loadError.value = null;
+  disponibilidad.value = null;
 
   try {
     const [vehiculoRes, segurosRes, tarifasRes, canalesRes] = await Promise.all([
@@ -181,6 +251,8 @@ async function cargarDatos(): Promise<void> {
 
     if (!vehiculo.value.precioPorDia) {
       loadError.value = 'El vehículo no tiene precio por día configurado.';
+    } else {
+      await consultarDisponibilidad();
     }
   } catch (err: unknown) {
     vehiculo.value = null;
@@ -194,16 +266,23 @@ async function cargarDatos(): Promise<void> {
   }
 }
 
-async function confirmarReserva(): Promise<void> {
+async function onCrearReserva(): Promise<void> {
   submitError.value = null;
+  submitEsConflictoReserva.value = false;
 
   if (!clienteId.value) {
     submitError.value = 'No se pudo identificar el cliente autenticado.';
     return;
   }
 
+  await consultarDisponibilidad();
+  if (bloqueadoPorDisponibilidad.value) {
+    submitError.value = AVISO_NO_DISPONIBLE;
+    return;
+  }
+
   if (!formValido.value) {
-    submitError.value = 'Completa fechas y catálogos antes de confirmar.';
+    submitError.value = 'Completa fechas y catálogos antes de crear la reserva.';
     return;
   }
 
@@ -220,10 +299,16 @@ async function confirmarReserva(): Promise<void> {
   submitting.value = true;
 
   try {
-    reservaCreada.value = await crearReserva(body);
+    const creada = await crearReserva(body);
+    reservaCreada.value = creada;
+
+    if (creada.id) {
+      await enriquecerReservaCreada(creada.id);
+    }
   } catch (err: unknown) {
     const serviceErr =
       err instanceof ReservaServiceError ? err : new ReservaServiceError('Error al reservar.');
+    submitEsConflictoReserva.value = esErrorReservaActiva(serviceErr);
     submitError.value = mensajeErrorReserva(serviceErr);
   } finally {
     submitting.value = false;
@@ -244,19 +329,19 @@ onMounted(() => {
 <template>
   <div class="mx-auto max-w-lg px-4 py-8">
     <div class="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-      <h1 class="text-xl font-bold text-slate-900">Confirmar reserva</h1>
+      <h1 class="text-xl font-bold text-slate-900">Crear reserva</h1>
 
       <div v-if="loading" class="mt-4">
         <UiSpinner label="Cargando información de la reserva…" />
       </div>
 
       <div v-else-if="loadError" class="mt-4">
-      <UiErrorAlert
-        title="No se pudo cargar la reserva"
-        :message="loadError"
-        :show-retry="true"
-        @retry="cargarDatos()"
-      />
+        <UiErrorAlert
+          title="No se pudo cargar la reserva"
+          :message="loadError"
+          :show-retry="true"
+          @retry="cargarDatos()"
+        />
       </div>
 
       <template v-else-if="vehiculo">
@@ -291,51 +376,105 @@ onMounted(() => {
           No se pudo identificar el cliente autenticado.
         </p>
 
+        <p
+          v-if="bloqueadoPorDisponibilidad"
+          class="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          role="status"
+        >
+          {{ AVISO_NO_DISPONIBLE }}
+          <span v-if="disponibilidad?.mensaje" class="mt-1 block text-amber-800">
+            {{ disponibilidad.mensaje }}
+          </span>
+        </p>
+
         <div
           v-if="reservaCreada"
           class="mt-6 overflow-hidden rounded-2xl border border-emerald-200 bg-emerald-50 shadow-sm"
           role="status"
         >
           <div class="border-b border-emerald-200/80 bg-emerald-100/60 px-5 py-4">
-            <p class="text-lg font-semibold text-emerald-900">¡Reserva confirmada!</p>
+            <p class="text-lg font-semibold text-emerald-900">Reserva creada correctamente</p>
             <p class="mt-1 text-sm text-emerald-800">
-              Tu solicitud fue registrada correctamente en RentWheels.
+              Tu solicitud quedó registrada en RentWheels. Revisa el estado y el pago a continuación.
             </p>
           </div>
-          <dl class="space-y-3 px-5 py-4 text-sm text-emerald-950">
-            <div class="flex flex-col gap-0.5 sm:flex-row sm:justify-between">
-              <dt class="text-emerald-800">Código / ID</dt>
-              <dd class="font-mono font-semibold">{{ reservaCodigo }}</dd>
-            </div>
-            <div class="flex flex-col gap-0.5 sm:flex-row sm:justify-between">
-              <dt class="text-emerald-800">Vehículo</dt>
-              <dd class="font-medium text-right">
-                {{ vehiculo.nombre }}
-                <span v-if="vehiculo.placa" class="font-mono text-emerald-900"> ({{ vehiculo.placa }})</span>
-              </dd>
-            </div>
-            <div class="flex flex-col gap-0.5 sm:flex-row sm:justify-between">
-              <dt class="text-emerald-800">Fechas</dt>
-              <dd class="font-medium">{{ reservaFechaInicio }} → {{ reservaFechaFin }}</dd>
-            </div>
-            <div class="flex flex-col gap-0.5 sm:flex-row sm:justify-between">
-              <dt class="text-emerald-800">Total</dt>
-              <dd class="text-lg font-bold">{{ reservaTotal }}</dd>
-            </div>
-            <div
-              v-if="reservaCreada.status"
-              class="flex flex-col gap-0.5 sm:flex-row sm:justify-between"
+
+          <div v-if="enriching" class="px-5 py-4">
+            <UiSpinner label="Consultando detalle y estado de pago…" size="sm" />
+          </div>
+
+          <template v-else>
+            <p
+              v-if="detalleWarning"
+              class="mx-5 mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+              role="status"
             >
-              <dt class="text-emerald-800">Estado</dt>
-              <dd>
-                <span
-                  class="inline-flex rounded-full bg-white px-2.5 py-0.5 text-xs font-semibold text-emerald-800"
-                >
-                  {{ reservaCreada.status }}
-                </span>
-              </dd>
+              {{ detalleWarning }}
+            </p>
+
+            <dl class="space-y-3 px-5 py-4 text-sm text-emerald-950">
+              <div class="flex flex-col gap-0.5 sm:flex-row sm:justify-between">
+                <dt class="text-emerald-800">Código / ID</dt>
+                <dd class="font-mono font-semibold">{{ reservaCodigo }}</dd>
+              </div>
+              <div class="flex flex-col gap-0.5 sm:flex-row sm:justify-between">
+                <dt class="text-emerald-800">Estado de reserva</dt>
+                <dd>
+                  <span
+                    class="inline-flex rounded-full bg-white px-2.5 py-0.5 text-xs font-semibold uppercase text-emerald-800"
+                  >
+                    {{ reservaEstado }}
+                  </span>
+                </dd>
+              </div>
+              <div class="flex flex-col gap-0.5 sm:flex-row sm:justify-between">
+                <dt class="text-emerald-800">Vehículo</dt>
+                <dd class="text-right font-medium">
+                  {{ vehiculo.nombre }}
+                  <span v-if="vehiculo.placa" class="font-mono text-emerald-900"> ({{ vehiculo.placa }})</span>
+                </dd>
+              </div>
+              <div class="flex flex-col gap-0.5 sm:flex-row sm:justify-between">
+                <dt class="text-emerald-800">Fechas</dt>
+                <dd class="font-medium">{{ reservaFechaInicio }} → {{ reservaFechaFin }}</dd>
+              </div>
+              <div class="flex flex-col gap-0.5 sm:flex-row sm:justify-between">
+                <dt class="text-emerald-800">Total</dt>
+                <dd class="text-lg font-bold">{{ reservaTotal }}</dd>
+              </div>
+            </dl>
+
+            <div class="border-t border-emerald-200/80 px-5 py-4">
+              <h2 class="text-sm font-semibold text-emerald-900">Estado del pago</h2>
+
+              <p
+                v-if="paymentWarning"
+                class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+                role="status"
+              >
+                {{ paymentWarning }}
+              </p>
+
+              <template v-else-if="paymentInfo">
+                <p class="mt-2 text-sm text-emerald-950">
+                  <span class="font-medium">{{ paymentLabel }}</span>
+                  <span v-if="paymentInfo.totalPagado > 0" class="text-emerald-800">
+                    · Total pagado: {{ formatDisplayMoney(paymentInfo.totalPagado) }}
+                  </span>
+                </p>
+                <p class="mt-2 text-sm text-emerald-800">{{ paymentHint }}</p>
+                <p v-if="paymentInfo.pagos.length" class="mt-2 text-xs text-emerald-700">
+                  {{ paymentInfo.pagos.length }} pago(s) registrado(s).
+                </p>
+              </template>
             </div>
-          </dl>
+
+            <p class="border-t border-emerald-200/80 px-5 py-3 text-xs text-emerald-800">
+              El vehículo se marcará como en uso cuando el alquiler sea iniciado por el proceso
+              correspondiente.
+            </p>
+          </template>
+
           <div class="border-t border-emerald-200/80 px-5 py-4">
             <button
               type="button"
@@ -347,7 +486,7 @@ onMounted(() => {
           </div>
         </div>
 
-        <form v-else class="mt-6 space-y-4" @submit.prevent="confirmarReserva">
+        <form v-else class="mt-6 space-y-4" @submit.prevent="onCrearReserva">
           <div>
             <label for="seguro" class="block text-sm font-medium text-slate-700">Seguro</label>
             <select
@@ -429,14 +568,33 @@ onMounted(() => {
             </p>
           </div>
 
-          <p v-if="submitError" class="text-sm text-red-600" role="alert">{{ submitError }}</p>
+          <div
+            v-if="submitError"
+            class="rounded-lg px-4 py-3 text-sm"
+            :class="
+              submitEsConflictoReserva
+                ? 'border border-amber-200 bg-amber-50 text-amber-900'
+                : 'text-red-600'
+            "
+            role="alert"
+          >
+            <p>{{ submitError }}</p>
+            <button
+              v-if="submitEsConflictoReserva || bloqueadoPorDisponibilidad"
+              type="button"
+              class="mt-3 w-full rounded-xl border border-amber-300 bg-white px-4 py-2.5 text-sm font-semibold text-amber-900 hover:bg-amber-100"
+              @click="router.push({ name: 'marketplace' })"
+            >
+              Volver al catálogo
+            </button>
+          </div>
 
           <button
             type="submit"
             :disabled="submitting || !formValido"
             class="w-full rounded-xl bg-brand-600 px-4 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {{ submitting ? 'Procesando…' : 'Confirmar reserva' }}
+            {{ submitting ? 'Procesando…' : 'Crear reserva' }}
           </button>
         </form>
       </template>

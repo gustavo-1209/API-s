@@ -22,7 +22,7 @@ function buildModeloLabel(vehiculo: Vehiculo): string {
 
 /** Mapea el DTO del backend a la tarjeta del marketplace. */
 export function mapVehiculoToCard(vehiculo: Vehiculo): VehiculoCard {
-  return {
+  const card: VehiculoCard = {
     id: vehiculo.id,
     placa: vehiculo.placa ?? '—',
     modeloLabel: buildModeloLabel(vehiculo),
@@ -30,6 +30,15 @@ export function mapVehiculoToCard(vehiculo: Vehiculo): VehiculoCard {
     imagenUrl: vehiculo.imagenUrl ?? null,
     status: (vehiculo.status ?? 'DISPONIBLE') as VehiculoStatus,
   };
+
+  if (typeof vehiculo.disponible === 'boolean') {
+    card.disponible = vehiculo.disponible;
+  }
+  if (typeof vehiculo.reservaActiva === 'boolean') {
+    card.reservaActiva = vehiculo.reservaActiva;
+  }
+
+  return card;
 }
 
 export interface UseVehiculosReturn {

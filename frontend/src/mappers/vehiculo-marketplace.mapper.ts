@@ -1,4 +1,5 @@
-import type { VehiculoMarketplace } from '@/types/vehiculo';
+import { unwrapApiData } from '@/lib/api-unwrap';
+import type { VehiculoDisponibilidadResponse, VehiculoMarketplace } from '@/types/vehiculo';
 
 function parsePrecio(value: unknown): number {
   if (value === null || value === undefined) return 0;
@@ -48,5 +49,23 @@ export function normalizeVehiculoMarketplace(raw: unknown): VehiculoMarketplace 
     status: typeof v.status === 'string' ? v.status : null,
     imagenUrl: typeof v.imagenUrl === 'string' ? v.imagenUrl : null,
     placa: typeof v.placa === 'string' ? v.placa : null,
+  };
+}
+
+function asRecord(raw: unknown): Record<string, unknown> {
+  return raw !== null && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+}
+
+/** Normaliza GET /vehiculos/{id}/disponibilidad. */
+export function normalizeVehiculoDisponibilidadResponse(body: unknown): VehiculoDisponibilidadResponse {
+  const raw = asRecord(unwrapApiData<unknown>(body));
+  const vehiculoId = String(raw.vehiculoId ?? raw.id ?? '');
+  const disponible = raw.disponible === true;
+
+  return {
+    vehiculoId,
+    disponible,
+    status: typeof raw.status === 'string' ? raw.status : null,
+    mensaje: typeof raw.mensaje === 'string' ? raw.mensaje : null,
   };
 }
