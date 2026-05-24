@@ -13,7 +13,7 @@ export function setupRouterGuards(router: Router): void {
     const requiresAuth = to.matched.some((record) => record.meta.requiresAuth);
     const requiredRole = [...to.matched].reverse().find((record) => record.meta.role)?.meta.role;
 
-    if (to.name === 'login' && token) {
+    if ((to.name === 'login' || to.name === 'register') && token) {
       next(userRole === 'ADMIN' ? { name: 'admin-dashboard' } : { name: 'marketplace' });
       return;
     }

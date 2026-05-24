@@ -3,6 +3,7 @@
 interface ImportMetaEnv {
   readonly VITE_ADMIN_API_BASE_URL: string;
   readonly VITE_BOOKING_API_BASE_URL: string;
+  readonly VITE_CLIENT_API_BASE_URL: string;
 }
 
 interface ImportMeta {

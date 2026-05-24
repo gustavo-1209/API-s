@@ -17,7 +17,8 @@ Frontend del marketplace y panel administrativo de **RentWheels**. Todas las pet
 Frontend (Vue)  →  bus-service  →  admin / booking
 ```
 
-- **adminApi** (`VITE_ADMIN_API_BASE_URL`): autenticación, inventario y operaciones de administración.
+- **adminApi** (`VITE_ADMIN_API_BASE_URL`): autenticación admin, inventario y operaciones de administración.
+- **clientApi** (`VITE_CLIENT_API_BASE_URL`): registro e inicio de sesión de clientes.
 - **bookingApi** (`VITE_BOOKING_API_BASE_URL`): catálogo marketplace y reservas del cliente.
 
 Los alias `api` y `apiClient` apuntan temporalmente a `bookingApi` por compatibilidad.
@@ -30,6 +31,7 @@ Copia `.env.example` a `.env` y ajusta las URLs si cambia el despliegue. **No su
 |----------|-------------|
 | `VITE_ADMIN_API_BASE_URL` | Base URL del prefijo admin en bus-service |
 | `VITE_BOOKING_API_BASE_URL` | Base URL del prefijo booking en bus-service |
+| `VITE_CLIENT_API_BASE_URL` | Base URL del prefijo cliente (registro/login) en bus-service |
 
 Ejemplo en `.env.example`:
 
@@ -53,14 +55,15 @@ npm run build
 
 | Área | Rutas |
 |------|--------|
-| Cliente | `/` o `/marketplace`, `/login`, `/reserva/:vehiculoId`, `/no-autorizado` o `/unauthorized` |
+| Cliente | `/` o `/marketplace`, `/login`, `/register` o `/registro`, `/reserva/:vehiculoId`, `/no-autorizado` o `/unauthorized` |
 | Admin | `/admin`, `/admin/vehiculos`, `/admin/reservas`, `/admin/pagos`, `/admin/facturas`, `/admin/mantenimientos`, `/admin/kardex` |
 
 ## Módulos implementados
 
 | Módulo | Descripción |
 |--------|-------------|
-| **Login** | Autenticación cliente y admin vía Admin Gateway |
+| **Login** | Autenticación admin (`adminApi`) y cliente (`clientApi`, fallback tras 401 admin) |
+| **Registro cliente** | Alta pública vía `clientApi` → `/auth/register` |
 | **Marketplace** | Catálogo de vehículos (Booking Gateway) |
 | **Reserva cliente** | Detalle, catálogos (seguro, tarifa, canal) y creación de reserva |
 | **Panel admin** | Dashboard con indicadores |

@@ -40,13 +40,20 @@ function logout(): void {
             Panel admin
           </RouterLink>
 
-          <RouterLink
-            v-if="!isLoggedIn"
-            :to="{ name: 'login' }"
-            class="rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700"
-          >
-            Iniciar sesión
-          </RouterLink>
+          <template v-if="!isLoggedIn">
+            <RouterLink
+              :to="{ name: 'login' }"
+              class="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+            >
+              Iniciar sesión
+            </RouterLink>
+            <RouterLink
+              :to="{ name: 'register' }"
+              class="rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700"
+            >
+              Crear cuenta
+            </RouterLink>
+          </template>
 
           <button
             v-else

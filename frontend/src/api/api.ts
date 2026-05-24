@@ -26,6 +26,12 @@ export const bookingApi: AxiosInstance = axios.create({
   timeout: requestTimeoutMs,
 });
 
+export const clientApi: AxiosInstance = axios.create({
+  baseURL: import.meta.env.VITE_CLIENT_API_BASE_URL,
+  headers: defaultHeaders,
+  timeout: requestTimeoutMs,
+});
+
 /** Compatibilidad temporal — usar `adminApi` (admin) y `bookingApi` (marketplace/reservas). */
 export const api = bookingApi;
 /** @see api */
@@ -55,7 +61,8 @@ function attachUnauthorizedHandler(instance: AxiosInstance, router: Router): voi
         const authStore = useAuthStore();
         authStore.clearSession();
 
-        if (router.currentRoute.value.path !== '/login') {
+        const path = router.currentRoute.value.path;
+        if (path !== '/login' && path !== '/register' && path !== '/registro') {
           void router.push('/login');
         }
       }
@@ -68,7 +75,9 @@ function attachUnauthorizedHandler(instance: AxiosInstance, router: Router): voi
 export function setupApiInterceptors(router: Router): void {
   adminApi.interceptors.request.use(attachBearerToken);
   bookingApi.interceptors.request.use(attachBearerToken);
+  clientApi.interceptors.request.use(attachBearerToken);
 
   attachUnauthorizedHandler(adminApi, router);
   attachUnauthorizedHandler(bookingApi, router);
+  attachUnauthorizedHandler(clientApi, router);
 }

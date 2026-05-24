@@ -1,14 +1,10 @@
 <script setup lang="ts">
 import { isAxiosError } from 'axios';
 import { ref } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
-import { adminApi } from '@/api/api';
+import { RouterLink, useRoute, useRouter } from 'vue-router';
+import { loginWithAdminOrClient } from '@/lib/auth-login';
 import { useAuthStore } from '@/stores/auth';
-import {
-  normalizeLoginResponse,
-  type LoginApiResponse,
-  type LoginPayload,
-} from '@/types/auth';
+import type { LoginPayload } from '@/types/auth';
 
 const route = useRoute();
 const router = useRouter();
@@ -25,18 +21,20 @@ function loginErrorMessage(err: unknown): string {
   }
 
   const status = err.response?.status;
+  const data = err.response?.data as { message?: string; error?: { message?: string } } | undefined;
+  const backendMsg = data?.error?.message ?? data?.message;
 
   if (status === 401) {
-    return 'Credenciales incorrectas. Verifica tu email y contraseña.';
+    return backendMsg ?? 'Credenciales incorrectas. Verifica tu email y contraseña.';
   }
   if (status === 403) {
-    return 'Tu usuario no tiene permisos para acceder.';
+    return backendMsg ?? 'Tu usuario no tiene permisos para acceder.';
   }
   if (!err.response) {
     return 'No se pudo conectar con el servidor de autenticación.';
   }
 
-  return 'No se pudo iniciar sesión. Intenta de nuevo.';
+  return backendMsg ?? 'No se pudo iniciar sesión. Intenta de nuevo.';
 }
 
 async function onSubmit(): Promise<void> {
@@ -49,9 +47,7 @@ async function onSubmit(): Promise<void> {
       password: password.value,
     };
 
-    const { data } = await adminApi.post<LoginApiResponse>('/auth/login', payload);
-    const { token, user } = normalizeLoginResponse(data);
-
+    const { token, user } = await loginWithAdminOrClient(payload);
     authStore.setSession(token, user);
 
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : null;
@@ -75,7 +71,9 @@ async function onSubmit(): Promise<void> {
     <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
       <p class="text-sm font-medium uppercase tracking-wider text-brand-600">RentWheels</p>
       <h1 class="mt-1 text-2xl font-bold text-slate-900">Iniciar sesión</h1>
-      <p class="mt-1 text-sm text-slate-600">Accede a tu cuenta para continuar.</p>
+      <p class="mt-1 text-sm text-slate-600">
+        Accede con tu cuenta de cliente o administrador.
+      </p>
 
       <form class="mt-8 space-y-5" @submit.prevent="onSubmit">
         <div>
@@ -113,6 +111,16 @@ async function onSubmit(): Promise<void> {
           {{ loading ? 'Ingresando…' : 'Entrar' }}
         </button>
       </form>
+
+      <p class="mt-6 text-center text-sm text-slate-600">
+        ¿No tienes cuenta?
+        <RouterLink
+          :to="{ name: 'register' }"
+          class="font-semibold text-brand-600 hover:text-brand-700"
+        >
+          Crear cuenta
+        </RouterLink>
+      </p>
     </div>
   </div>
 </template>
