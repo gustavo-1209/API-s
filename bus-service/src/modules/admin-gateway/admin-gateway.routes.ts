@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { authenticate, requireAdmin } from '../../shared/middlewares/auth.middleware.js';
 
 type ServiceName =
   | 'auth'
@@ -124,8 +125,14 @@ function proxyPrefix(
 }
 
 export function createAdminGatewayRouter(): Router {
+  
   const router = Router();
 
+  router.post('/auth/login', (req, res) =>
+  forwardRequest(req, res, 'auth', '/api/v1/gustavobenalcazar/auth/login'),
+);
+
+router.use(authenticate, requireAdmin);
   proxyPrefix(router, '/auth', 'auth', '/api/v1/gustavobenalcazar/auth');
   proxyPrefix(router, '/usuarios', 'auth', '/api/v1/gustavobenalcazar/usuarios');
 
