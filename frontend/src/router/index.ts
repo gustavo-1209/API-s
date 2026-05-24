@@ -54,6 +54,26 @@ const router = createRouter({
           name: 'admin-reservas',
           component: () => import('@/views/admin/AdminReservas.vue'),
         },
+        {
+          path: 'pagos',
+          name: 'admin-pagos',
+          component: () => import('@/views/admin/AdminPagos.vue'),
+        },
+        {
+          path: 'facturas',
+          name: 'admin-facturas',
+          component: () => import('@/views/admin/AdminFacturas.vue'),
+        },
+        {
+          path: 'mantenimientos',
+          name: 'admin-mantenimientos',
+          component: () => import('@/views/admin/AdminMantenimientos.vue'),
+        },
+        {
+          path: 'kardex',
+          name: 'admin-kardex',
+          component: () => import('@/views/admin/AdminKardex.vue'),
+        },
       ],
     },
     {
