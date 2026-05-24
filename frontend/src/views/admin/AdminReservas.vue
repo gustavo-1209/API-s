@@ -133,7 +133,8 @@ async function onConfirmarReserva(row: AdminReservaRow): Promise<void> {
 }
 
 function validarKmSalida(): number | null {
-  const n = Number.parseFloat(kmSalidaInput.value.trim());
+  const raw = String(kmSalidaInput.value ?? '').trim();
+  const n = Number(raw);
   if (!Number.isFinite(n) || n < 0) {
     formError.value = 'Ingresa un kilometraje de salida válido (número ≥ 0).';
     return null;
@@ -174,11 +175,9 @@ async function onSubmitIniciarAlquiler(): Promise<void> {
   }
 }
 
-function validarDevolucion(row: AdminReservaRow): {
-  kmEntrada: number;
-  cargoExtra: number;
-} | null {
-  const kmEntrada = Number.parseFloat(kmEntradaInput.value.trim());
+function validarKmEntrada(row: AdminReservaRow): number | null {
+  const raw = String(kmEntradaInput.value ?? '').trim();
+  const kmEntrada = Number(raw);
   if (!Number.isFinite(kmEntrada) || kmEntrada < 0) {
     formError.value = 'Ingresa un kilometraje de entrada válido (número ≥ 0).';
     return null;
@@ -190,15 +189,31 @@ function validarDevolucion(row: AdminReservaRow): {
     return null;
   }
 
-  const cargoRaw = cargoExtraInput.value.trim();
-  let cargoExtra = 0;
-  if (cargoRaw) {
-    cargoExtra = Number.parseFloat(cargoRaw);
-    if (!Number.isFinite(cargoExtra) || cargoExtra < 0) {
-      formError.value = 'El cargo extra debe ser un número ≥ 0.';
-      return null;
-    }
+  return kmEntrada;
+}
+
+function validarCargoExtra(): number | null {
+  const raw = String(cargoExtraInput.value ?? '').trim();
+  if (!raw) return 0;
+
+  const cargoExtra = Number(raw);
+  if (!Number.isFinite(cargoExtra) || cargoExtra < 0) {
+    formError.value = 'El cargo extra debe ser un número ≥ 0.';
+    return null;
   }
+
+  return cargoExtra;
+}
+
+function validarDevolucion(row: AdminReservaRow): {
+  kmEntrada: number;
+  cargoExtra: number;
+} | null {
+  const kmEntrada = validarKmEntrada(row);
+  if (kmEntrada === null) return null;
+
+  const cargoExtra = validarCargoExtra();
+  if (cargoExtra === null) return null;
 
   return { kmEntrada, cargoExtra };
 }
@@ -207,6 +222,7 @@ async function onSubmitRegistrarDevolucion(): Promise<void> {
   const row = reservaSeleccionada.value;
   if (!row?.alquilerId) return;
 
+  formError.value = null;
   const parsed = validarDevolucion(row);
   if (!parsed) return;
 
