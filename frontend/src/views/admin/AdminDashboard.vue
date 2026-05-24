@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
+import UiSpinner from '@/components/ui/UiSpinner.vue';
 import { useAuthStore } from '@/stores/auth';
 import { useAdminFinanciero } from '@/composables/useAdminFinanciero';
 import { useAdminMantenimientos } from '@/composables/useAdminMantenimientos';
@@ -92,7 +93,7 @@ onMounted(async () => {
       <p class="mt-1 text-sm text-slate-500">Resumen en tiempo real del Admin Gateway (solo lectura).</p>
     </div>
 
-    <p v-if="loading" class="text-sm text-slate-500">Cargando resumen…</p>
+    <UiSpinner v-if="loading" label="Cargando resumen del panel…" size="sm" />
 
     <div
       v-if="partialErrors.length"

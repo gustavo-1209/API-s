@@ -16,6 +16,7 @@ const router = createRouter({
         {
           path: '',
           name: 'marketplace',
+          alias: '/marketplace',
           component: () => import('@/views/Marketplace.vue'),
           meta: { public: true },
         },
@@ -29,6 +30,7 @@ const router = createRouter({
         {
           path: 'no-autorizado',
           name: 'no-autorizado',
+          alias: '/unauthorized',
           component: () => import('@/views/UnauthorizedView.vue'),
           meta: { public: true },
         },

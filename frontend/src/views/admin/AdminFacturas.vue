@@ -28,8 +28,9 @@ onMounted(() => {
     :error="errorFacturas"
     :empty="!loadingFacturas && !errorFacturas && facturas.length === 0"
     empty-message="No hay facturas registradas."
+    @retry="fetchFacturas()"
   >
-    <div class="overflow-x-auto">
+    <div class="min-w-[720px] overflow-x-auto">
       <table class="min-w-full divide-y divide-slate-200 text-sm">
         <thead class="bg-slate-50">
           <tr>

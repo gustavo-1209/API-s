@@ -18,8 +18,9 @@ onMounted(() => {
     :error="error"
     :empty="!loading && !error && vehiculos.length === 0"
     empty-message="No hay vehículos registrados."
+    @retry="fetchVehiculos()"
   >
-    <div class="overflow-x-auto">
+    <div class="min-w-[720px] overflow-x-auto">
       <table class="min-w-full divide-y divide-slate-200 text-sm">
         <thead class="bg-slate-50">
           <tr>

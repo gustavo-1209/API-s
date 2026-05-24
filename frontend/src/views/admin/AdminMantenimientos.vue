@@ -29,8 +29,9 @@ onMounted(() => {
     :error="errorMantenimientos"
     :empty="!loadingMantenimientos && !errorMantenimientos && mantenimientos.length === 0"
     empty-message="No hay mantenimientos registrados."
+    @retry="fetchMantenimientos()"
   >
-    <div class="overflow-x-auto">
+    <div class="min-w-[800px] overflow-x-auto">
       <table class="min-w-full divide-y divide-slate-200 text-sm">
         <thead class="bg-slate-50">
           <tr>

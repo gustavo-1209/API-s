@@ -11,6 +11,9 @@ import { normalizeVehiculoMarketplace } from '@/mappers/vehiculo-marketplace.map
 import { crearReserva, mensajeErrorReserva, ReservaServiceError } from '@/composables/useReservas';
 import { unwrapApiData, unwrapApiList } from '@/lib/api-unwrap';
 import { resolveClienteId } from '@/lib/cliente-id';
+import UiErrorAlert from '@/components/ui/UiErrorAlert.vue';
+import UiSpinner from '@/components/ui/UiSpinner.vue';
+import { formatDisplayDate, formatDisplayMoney } from '@/lib/format';
 import { useAuthStore } from '@/stores/auth';
 import type { CanalVenta, CrearReservaRequest, CrearReservaResponse, Seguro, Tarifa } from '@/types/reserva';
 import type { VehiculoMarketplace } from '@/types/vehiculo';
@@ -65,6 +68,27 @@ const minFin = computed(() => {
 });
 
 const hoy = new Date().toISOString().slice(0, 10);
+
+const reservaCodigo = computed(
+  () => reservaCreada.value?.codigoReserva ?? reservaCreada.value?.id ?? '',
+);
+
+const reservaFechaInicio = computed(() =>
+  formatDisplayDate(reservaCreada.value?.fechaInicio ?? fechaInicio.value),
+);
+
+const reservaFechaFin = computed(() =>
+  formatDisplayDate(reservaCreada.value?.fechaFin ?? fechaFin.value),
+);
+
+const reservaTotal = computed(() => {
+  const fromApi = reservaCreada.value?.totalAmount;
+  if (fromApi !== undefined && fromApi !== null && fromApi !== '') {
+    return formatDisplayMoney(fromApi);
+  }
+  if (dias.value > 0) return formatDisplayMoney(totalEstimado.value);
+  return '—';
+});
 
 const formValido = computed(
   () =>
@@ -222,9 +246,18 @@ onMounted(() => {
     <div class="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
       <h1 class="text-xl font-bold text-slate-900">Confirmar reserva</h1>
 
-      <div v-if="loading" class="mt-6 text-sm text-slate-500">Cargando información…</div>
+      <div v-if="loading" class="mt-4">
+        <UiSpinner label="Cargando información de la reserva…" />
+      </div>
 
-      <p v-else-if="loadError" class="mt-6 text-sm text-red-600" role="alert">{{ loadError }}</p>
+      <div v-else-if="loadError" class="mt-4">
+      <UiErrorAlert
+        title="No se pudo cargar la reserva"
+        :message="loadError"
+        :show-retry="true"
+        @retry="cargarDatos()"
+      />
+      </div>
 
       <template v-else-if="vehiculo">
         <div v-if="vehiculo.imagenUrl" class="mt-4 overflow-hidden rounded-xl">
@@ -260,21 +293,58 @@ onMounted(() => {
 
         <div
           v-if="reservaCreada"
-          class="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-900"
+          class="mt-6 overflow-hidden rounded-2xl border border-emerald-200 bg-emerald-50 shadow-sm"
           role="status"
         >
-          <p class="font-semibold">¡Reserva creada con éxito!</p>
-          <p class="mt-2">
-            ID de reserva:
-            <span class="font-mono font-medium">{{ reservaCreada.codigoReserva ?? reservaCreada.id }}</span>
-          </p>
-          <p class="mt-1">Vehículo: <strong>{{ vehiculo.nombre }}</strong></p>
-          <p class="mt-1">
-            Fechas:
-            <strong>{{ reservaCreada.fechaInicio ?? fechaInicio }}</strong>
-            →
-            <strong>{{ reservaCreada.fechaFin ?? fechaFin }}</strong>
-          </p>
+          <div class="border-b border-emerald-200/80 bg-emerald-100/60 px-5 py-4">
+            <p class="text-lg font-semibold text-emerald-900">¡Reserva confirmada!</p>
+            <p class="mt-1 text-sm text-emerald-800">
+              Tu solicitud fue registrada correctamente en RentWheels.
+            </p>
+          </div>
+          <dl class="space-y-3 px-5 py-4 text-sm text-emerald-950">
+            <div class="flex flex-col gap-0.5 sm:flex-row sm:justify-between">
+              <dt class="text-emerald-800">Código / ID</dt>
+              <dd class="font-mono font-semibold">{{ reservaCodigo }}</dd>
+            </div>
+            <div class="flex flex-col gap-0.5 sm:flex-row sm:justify-between">
+              <dt class="text-emerald-800">Vehículo</dt>
+              <dd class="font-medium text-right">
+                {{ vehiculo.nombre }}
+                <span v-if="vehiculo.placa" class="font-mono text-emerald-900"> ({{ vehiculo.placa }})</span>
+              </dd>
+            </div>
+            <div class="flex flex-col gap-0.5 sm:flex-row sm:justify-between">
+              <dt class="text-emerald-800">Fechas</dt>
+              <dd class="font-medium">{{ reservaFechaInicio }} → {{ reservaFechaFin }}</dd>
+            </div>
+            <div class="flex flex-col gap-0.5 sm:flex-row sm:justify-between">
+              <dt class="text-emerald-800">Total</dt>
+              <dd class="text-lg font-bold">{{ reservaTotal }}</dd>
+            </div>
+            <div
+              v-if="reservaCreada.status"
+              class="flex flex-col gap-0.5 sm:flex-row sm:justify-between"
+            >
+              <dt class="text-emerald-800">Estado</dt>
+              <dd>
+                <span
+                  class="inline-flex rounded-full bg-white px-2.5 py-0.5 text-xs font-semibold text-emerald-800"
+                >
+                  {{ reservaCreada.status }}
+                </span>
+              </dd>
+            </div>
+          </dl>
+          <div class="border-t border-emerald-200/80 px-5 py-4">
+            <button
+              type="button"
+              class="w-full rounded-xl bg-brand-600 px-4 py-3 text-sm font-semibold text-white hover:bg-brand-700"
+              @click="router.push({ name: 'marketplace' })"
+            >
+              Volver al catálogo
+            </button>
+          </div>
         </div>
 
         <form v-else class="mt-6 space-y-4" @submit.prevent="confirmarReserva">
@@ -372,6 +442,7 @@ onMounted(() => {
       </template>
 
       <button
+        v-if="!reservaCreada"
         type="button"
         class="mt-6 text-sm font-medium text-brand-600 hover:text-brand-700"
         @click="router.push({ name: 'marketplace' })"

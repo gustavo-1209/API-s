@@ -18,8 +18,9 @@ onMounted(() => {
     :error="error"
     :empty="!loading && !error && reservas.length === 0"
     empty-message="No hay reservas registradas."
+    @retry="fetchReservas()"
   >
-    <div class="overflow-x-auto">
+    <div class="min-w-[800px] overflow-x-auto">
       <table class="min-w-full divide-y divide-slate-200 text-sm">
         <thead class="bg-slate-50">
           <tr>
