@@ -5,6 +5,36 @@ import prisma from '../../shared/database/prisma.js';
 
 const INVENTARIO_URL = process.env['INVENTARIO_SERVICE_URL'] ?? 'http://localhost:3002';
 
+async function patchVehiculoStatus(
+  vehiculoId: string,
+  data: object,
+  authHeader?: string,
+): Promise<void> {
+  const response = await fetch(
+    `${INVENTARIO_URL}/api/v1/gustavobenalcazar/vehiculos/${vehiculoId}`,
+    {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: authHeader ?? '',
+      },
+      body: JSON.stringify(data),
+    },
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+
+    console.error('[booking-integration] Error actualizando inventario:', {
+      vehiculoId,
+      status: response.status,
+      body: errorText,
+    });
+
+    throw new Error('No se pudo actualizar el vehículo en inventario');
+  }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function fetchVehiculo(vehiculoId: string): Promise<any | null> {
@@ -287,11 +317,11 @@ export function createAlquilerBookingRouter(alquilerRepo: AlquilerRepository): R
       });
 
       if (reserva.vehiculoId) {
-        fetch(`${INVENTARIO_URL}/api/v1/gustavobenalcazar/vehiculos/${reserva.vehiculoId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json', Authorization: req.headers.authorization ?? '' },
-          body: JSON.stringify({ status: 'EN_USO' }),
-        }).catch(() => {});
+        await patchVehiculoStatus(
+          reserva.vehiculoId,
+          { status: 'EN_USO' },
+          req.headers.authorization,
+        );
       }
 
       const result = await alquilerRepo.findById(alquiler.id);
@@ -347,11 +377,11 @@ export function createDevolucionBookingRouter(alquilerRepo: AlquilerRepository):
       });
 
       if (reservaObj?.vehiculoId) {
-        fetch(`${INVENTARIO_URL}/api/v1/gustavobenalcazar/vehiculos/${reservaObj.vehiculoId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json', Authorization: req.headers.authorization ?? '' },
-          body: JSON.stringify({ status: 'DISPONIBLE', kilometraje: kmEntrada }),
-        }).catch(() => {});
+        await patchVehiculoStatus(
+          reservaObj.vehiculoId,
+          { status: 'DISPONIBLE', kilometraje: kmEntrada },
+          req.headers.authorization,
+        );
       }
 
       res.status(201).json({ success: true, data: devolucion });
