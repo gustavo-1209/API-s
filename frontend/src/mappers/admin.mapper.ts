@@ -412,9 +412,53 @@ function resolveReservaCliente(r: Record<string, unknown>): string {
   return '—';
 }
 
+function extractAlquilerFromReservaRaw(
+  r: Record<string, unknown>,
+): { alquilerId?: string; kmSalida?: number } {
+  let alquilerId = getString(r, ['alquilerId']);
+  let kmSalida = getNumber(r, ['kmSalida']);
+
+  const alquilerRaw = r.alquiler;
+  if (alquilerRaw && typeof alquilerRaw === 'object') {
+    const a = alquilerRaw as Record<string, unknown>;
+    if (!alquilerId) alquilerId = getString(a, ['id', 'alquilerId']);
+    const nestedKm = getNumber(a, ['kmSalida']);
+    if (nestedKm !== null) kmSalida = nestedKm;
+  }
+
+  return {
+    alquilerId: alquilerId || undefined,
+    kmSalida: kmSalida ?? undefined,
+  };
+}
+
+/** Índice reservaId → alquiler activo desde GET /alquileres. */
+export function buildAlquilerIndexFromList(rawList: unknown[]): Map<string, { alquilerId: string; kmSalida?: number }> {
+  const index = new Map<string, { alquilerId: string; kmSalida?: number }>();
+
+  for (const item of rawList) {
+    const r = asRecord(item);
+    const alquilerId = getString(r, ['id']);
+    if (!alquilerId) continue;
+
+    let reservaId = getString(r, ['reservaId']);
+    const reservaRaw = r.reserva;
+    if (!reservaId && reservaRaw && typeof reservaRaw === 'object') {
+      reservaId = getString(reservaRaw as Record<string, unknown>, ['id', 'reservaId']);
+    }
+    if (!reservaId) continue;
+
+    const kmSalida = getNumber(r, ['kmSalida']) ?? undefined;
+    index.set(reservaId, { alquilerId, kmSalida });
+  }
+
+  return index;
+}
+
 export function normalizeAdminReserva(
   raw: unknown,
   lookup: Map<string, AdminVehiculoRow> = new Map(),
+  alquilerIndex: Map<string, { alquilerId: string; kmSalida?: number }> = new Map(),
 ): AdminReservaRow | null {
   const r = asRecord(raw);
   const id = getString(r, ['id', 'reservaId', 'res_id']);
@@ -426,6 +470,9 @@ export function normalizeAdminReserva(
   const totalRaw = r.totalAmount ?? r.res_total ?? r.total;
   const total = formatMoney(totalRaw);
 
+  const fromRaw = extractAlquilerFromReservaRaw(r);
+  const fromIndex = alquilerIndex.get(id);
+
   return {
     id,
     codigo,
@@ -435,6 +482,8 @@ export function normalizeAdminReserva(
     fechaFin: formatDate(r.fechaFin ?? r.res_fecha_fin),
     total,
     estado: getString(r, ['status', 'estado'], '—') || '—',
+    alquilerId: fromRaw.alquilerId ?? fromIndex?.alquilerId,
+    kmSalida: fromRaw.kmSalida ?? fromIndex?.kmSalida,
   };
 }
 

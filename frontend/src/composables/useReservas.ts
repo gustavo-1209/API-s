@@ -7,6 +7,7 @@ import {
 } from '@/mappers/reserva.mapper';
 import { normalizeVehiculoDisponibilidadResponse } from '@/mappers/vehiculo-marketplace.mapper';
 import type {
+  ConfirmarReservaRequest,
   CrearReservaRequest,
   CrearReservaResponse,
   PaymentResponse,
@@ -104,6 +105,36 @@ export async function obtenerReserva(reservaId: string): Promise<ReservaDetalleR
     if (err instanceof ReservaServiceError) throw err;
     throw extractErrorMessage(err, 'No se pudo obtener el detalle de la reserva.');
   }
+}
+
+export async function confirmarReserva(reservaId: string): Promise<ReservaDetalleResponse> {
+  const body: ConfirmarReservaRequest = { status: 'CONFIRMADA' };
+
+  try {
+    const { data } = await bookingApi.patch<unknown>(`/reservas/${reservaId}`, body);
+
+    assertSuccessWrapper(data, 'No se pudo confirmar la reserva.');
+    return normalizeReservaDetalleResponse(data);
+  } catch (err: unknown) {
+    if (err instanceof ReservaServiceError) throw err;
+    throw extractErrorMessage(err, 'No se pudo confirmar la reserva. Intenta de nuevo.');
+  }
+}
+
+export function mensajeErrorConfirmarReserva(err: ReservaServiceError): string {
+  if (err.status === 404) {
+    return 'No se encontró la reserva. Si el problema continúa, vuelve al catálogo e intenta de nuevo.';
+  }
+  if (err.status === 422) {
+    return (
+      err.message ||
+      'No se puede confirmar esta reserva en su estado actual. Solo las reservas PENDIENTE pueden confirmarse.'
+    );
+  }
+  if (err.status === 400) {
+    return err.message || 'El estado solicitado no es válido.';
+  }
+  return mensajeErrorReserva(err);
 }
 
 export async function consultarPago(reservaId: string): Promise<PaymentResponse> {

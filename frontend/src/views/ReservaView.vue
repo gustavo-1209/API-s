@@ -11,9 +11,11 @@ import {
 } from '@/mappers/reserva.mapper';
 import { normalizeVehiculoMarketplace } from '@/mappers/vehiculo-marketplace.mapper';
 import {
+  confirmarReserva,
   consultarPago,
   crearReserva,
   esErrorReservaActiva,
+  mensajeErrorConfirmarReserva,
   mensajeErrorReserva,
   obtenerReserva,
   ReservaServiceError,
@@ -67,6 +69,15 @@ const detalleWarning = ref<string | null>(null);
 const paymentWarning = ref<string | null>(null);
 const disponibilidad = ref<VehiculoDisponibilidadResponse | null>(null);
 const submitEsConflictoReserva = ref(false);
+const confirming = ref(false);
+const confirmError = ref<string | null>(null);
+const confirmSuccess = ref<string | null>(null);
+
+const MSG_CONFIRMACION_OK =
+  'Reserva confirmada correctamente. Ya puede continuar con el proceso operativo del alquiler.';
+
+const ACLARACION_CONFIRMACION =
+  'Confirmar la reserva no inicia el alquiler; el vehículo pasará a EN_USO cuando se registre el alquiler.';
 
 const clienteId = computed(() => resolveClienteId(authStore.user, authStore.token));
 
@@ -103,6 +114,10 @@ const reservaCodigo = computed(
 );
 
 const reservaEstado = computed(() => reservaActiva.value?.status ?? 'PENDIENTE');
+
+const reservaIdActiva = computed(() => reservaActiva.value?.id ?? '');
+
+const puedeConfirmarReserva = computed(() => reservaEstado.value === 'PENDIENTE');
 
 const reservaFechaInicio = computed(() =>
   formatDisplayDate(reservaActiva.value?.fechaInicio ?? fechaInicio.value),
@@ -194,6 +209,60 @@ function selectFirstDefaults(): void {
 
 function catalogLabel(nombre: string | undefined, id: string): string {
   return nombre?.trim() || id;
+}
+
+function sincronizarReservaDesdeDetalle(detalle: ReservaDetalleResponse): void {
+  reservaDetalle.value = detalle;
+  if (reservaCreada.value) {
+    reservaCreada.value = {
+      ...reservaCreada.value,
+      status: detalle.status,
+      codigoReserva: detalle.codigoReserva ?? reservaCreada.value.codigoReserva,
+      totalAmount: detalle.totalAmount ?? reservaCreada.value.totalAmount,
+      fechaInicio: detalle.fechaInicio ?? reservaCreada.value.fechaInicio,
+      fechaFin: detalle.fechaFin ?? reservaCreada.value.fechaFin,
+    };
+  }
+}
+
+async function refrescarDetalleYPago(reservaId: string): Promise<void> {
+  try {
+    sincronizarReservaDesdeDetalle(await obtenerReserva(reservaId));
+  } catch {
+    detalleWarning.value =
+      'No se pudo actualizar el detalle desde el servidor, pero la confirmación pudo haberse registrado.';
+  }
+
+  try {
+    paymentInfo.value = await consultarPago(reservaId);
+    paymentWarning.value = null;
+  } catch {
+    paymentWarning.value = 'No se pudo consultar el estado de pago.';
+  }
+}
+
+async function onConfirmarReserva(): Promise<void> {
+  const id = reservaIdActiva.value;
+  if (!id || !puedeConfirmarReserva.value) return;
+
+  confirming.value = true;
+  confirmError.value = null;
+  confirmSuccess.value = null;
+
+  try {
+    const confirmada = await confirmarReserva(id);
+    sincronizarReservaDesdeDetalle(confirmada);
+    await refrescarDetalleYPago(id);
+    confirmSuccess.value = MSG_CONFIRMACION_OK;
+  } catch (err: unknown) {
+    const serviceErr =
+      err instanceof ReservaServiceError
+        ? err
+        : new ReservaServiceError('No se pudo confirmar la reserva.');
+    confirmError.value = mensajeErrorConfirmarReserva(serviceErr);
+  } finally {
+    confirming.value = false;
+  }
 }
 
 async function enriquecerReservaCreada(reservaId: string): Promise<void> {
@@ -445,6 +514,38 @@ onMounted(() => {
             </dl>
 
             <div class="border-t border-emerald-200/80 px-5 py-4">
+              <p v-if="puedeConfirmarReserva" class="text-xs text-emerald-800">
+                {{ ACLARACION_CONFIRMACION }}
+              </p>
+
+              <p
+                v-if="confirmSuccess"
+                class="mt-3 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-900"
+                role="status"
+              >
+                {{ confirmSuccess }}
+              </p>
+
+              <p
+                v-if="confirmError"
+                class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+                role="alert"
+              >
+                {{ confirmError }}
+              </p>
+
+              <button
+                v-if="puedeConfirmarReserva"
+                type="button"
+                class="mt-3 w-full rounded-xl border-2 border-brand-600 bg-white px-4 py-3 text-sm font-semibold text-brand-700 hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-60"
+                :disabled="confirming"
+                @click="onConfirmarReserva"
+              >
+                {{ confirming ? 'Confirmando…' : 'Confirmar reserva' }}
+              </button>
+            </div>
+
+            <div class="border-t border-emerald-200/80 px-5 py-4">
               <h2 class="text-sm font-semibold text-emerald-900">Estado del pago</h2>
 
               <p
@@ -469,7 +570,10 @@ onMounted(() => {
               </template>
             </div>
 
-            <p class="border-t border-emerald-200/80 px-5 py-3 text-xs text-emerald-800">
+            <p
+              v-if="!puedeConfirmarReserva"
+              class="border-t border-emerald-200/80 px-5 py-3 text-xs text-emerald-800"
+            >
               El vehículo se marcará como en uso cuando el alquiler sea iniciado por el proceso
               correspondiente.
             </p>
