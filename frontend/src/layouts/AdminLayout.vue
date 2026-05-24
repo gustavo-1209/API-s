@@ -28,7 +28,7 @@ function logout(): void {
   <div class="flex min-h-screen bg-slate-100">
   <aside class="flex w-64 flex-col border-r border-slate-200 bg-slate-900 text-slate-100">
     <div class="border-b border-slate-700 px-5 py-5">
-      <p class="text-xs font-semibold uppercase tracking-wider text-brand-300">Urban Car</p>
+      <p class="text-xs font-semibold uppercase tracking-wider text-brand-300">RentWheels</p>
       <h1 class="text-lg font-bold">Panel Admin</h1>
     </div>
 

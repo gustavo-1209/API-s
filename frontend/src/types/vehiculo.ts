@@ -52,10 +52,25 @@ export interface Vehiculo {
   categoria?: Categoria | null;
 }
 
-/** Respuesta estándar del backend Urban Car. */
+/** Respuesta estándar del backend RentWheels (bus-service). */
 export interface ApiResponse<T> {
   success: boolean;
   data: T;
+}
+
+/** Detalle de vehículo normalizado para reserva (Booking Gateway). */
+export interface VehiculoMarketplace {
+  id: string;
+  nombre: string;
+  descripcion?: string | null;
+  precioPorDia: number;
+  moneda?: string | null;
+  categoria?: string | null;
+  agenciaId?: string | null;
+  disponible?: boolean;
+  status?: string | null;
+  imagenUrl?: string | null;
+  placa?: string | null;
 }
 
 /** Vista del catálogo: datos normalizados para la UI. */

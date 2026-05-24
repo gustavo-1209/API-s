@@ -9,6 +9,10 @@ export interface AuthUser {
   nombres?: string;
   apellidos?: string;
   role?: UserRole;
+  /** Alias posibles del Booking/Admin Gateway para el cliente. */
+  cli_id?: string;
+  clienteId?: string;
+  cliente_id?: string;
 }
 
 function hydrateUserFromToken(storedToken: string | null): AuthUser | null {

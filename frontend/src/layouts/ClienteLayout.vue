@@ -20,7 +20,7 @@ function logout(): void {
     <header class="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
       <nav class="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
         <RouterLink :to="{ name: 'marketplace' }" class="flex items-center gap-2">
-          <span class="text-lg font-bold text-brand-700">Urban Car</span>
+          <span class="text-lg font-bold text-brand-700">RentWheels</span>
         </RouterLink>
 
         <div class="flex items-center gap-1 sm:gap-4">

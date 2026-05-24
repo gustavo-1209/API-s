@@ -7,35 +7,45 @@ import type { Router } from 'vue-router';
 import { getToken } from '@/lib/auth-storage';
 import { useAuthStore } from '@/stores/auth';
 
-const baseURL = import.meta.env.VITE_API_BASE_URL ?? '/api';
+const defaultHeaders = {
+  'Content-Type': 'application/json',
+  Accept: 'application/json',
+};
 
-export const api: AxiosInstance = axios.create({
-  baseURL,
-  headers: {
-    'Content-Type': 'application/json',
-    Accept: 'application/json',
-  },
-  timeout: 15_000,
+const requestTimeoutMs = 15_000;
+
+export const adminApi: AxiosInstance = axios.create({
+  baseURL: import.meta.env.VITE_ADMIN_API_BASE_URL,
+  headers: defaultHeaders,
+  timeout: requestTimeoutMs,
 });
 
-/** Alias para compatibilidad con imports existentes. */
-export const apiClient = api;
+export const bookingApi: AxiosInstance = axios.create({
+  baseURL: import.meta.env.VITE_BOOKING_API_BASE_URL,
+  headers: defaultHeaders,
+  timeout: requestTimeoutMs,
+});
+
+/** Compatibilidad temporal — usar `adminApi` (admin) y `bookingApi` (marketplace/reservas). */
+export const api = bookingApi;
+/** @see api */
+export const apiClient = bookingApi;
 
 function isAuthEndpoint(url: string | undefined): boolean {
   if (!url) return false;
   return url.includes('/auth/login') || url.includes('/auth/register');
 }
 
-export function setupApiInterceptors(router: Router): void {
-  api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-    const token = getToken();
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  });
+function attachBearerToken(config: InternalAxiosRequestConfig): InternalAxiosRequestConfig {
+  const token = getToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+}
 
-  api.interceptors.response.use(
+function attachUnauthorizedHandler(instance: AxiosInstance, router: Router): void {
+  instance.interceptors.response.use(
     (response) => response,
     (error: AxiosError) => {
       const status = error.response?.status;
@@ -53,4 +63,12 @@ export function setupApiInterceptors(router: Router): void {
       return Promise.reject(error);
     },
   );
+}
+
+export function setupApiInterceptors(router: Router): void {
+  adminApi.interceptors.request.use(attachBearerToken);
+  bookingApi.interceptors.request.use(attachBearerToken);
+
+  attachUnauthorizedHandler(adminApi, router);
+  attachUnauthorizedHandler(bookingApi, router);
 }

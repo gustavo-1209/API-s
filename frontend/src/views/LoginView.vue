@@ -2,9 +2,13 @@
 import { isAxiosError } from 'axios';
 import { ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { api } from '@/api/api';
+import { adminApi } from '@/api/api';
 import { useAuthStore } from '@/stores/auth';
-import type { ApiResponse, LoginPayload, LoginResponseData } from '@/types/auth';
+import {
+  normalizeLoginResponse,
+  type LoginApiResponse,
+  type LoginPayload,
+} from '@/types/auth';
 
 const route = useRoute();
 const router = useRouter();
@@ -14,6 +18,26 @@ const email = ref('');
 const password = ref('');
 const loading = ref(false);
 const error = ref<string | null>(null);
+
+function loginErrorMessage(err: unknown): string {
+  if (!isAxiosError(err)) {
+    return 'No se pudo iniciar sesión. Intenta de nuevo.';
+  }
+
+  const status = err.response?.status;
+
+  if (status === 401) {
+    return 'Credenciales incorrectas. Verifica tu email y contraseña.';
+  }
+  if (status === 403) {
+    return 'Tu usuario no tiene permisos para acceder.';
+  }
+  if (!err.response) {
+    return 'No se pudo conectar con el servidor de autenticación.';
+  }
+
+  return 'No se pudo iniciar sesión. Intenta de nuevo.';
+}
 
 async function onSubmit(): Promise<void> {
   loading.value = true;
@@ -25,8 +49,11 @@ async function onSubmit(): Promise<void> {
       password: password.value,
     };
 
-    const { data } = await api.post<ApiResponse<LoginResponseData>>('/auth/login', payload);
-    authStore.setSession(data.data.token, data.data.user);
+    const { data } = await adminApi.post<LoginApiResponse>('/auth/login', payload);
+    const { token, user } = normalizeLoginResponse(data);
+
+    authStore.setSession(token, user);
+
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : null;
     if (redirect) {
       await router.push(redirect);
@@ -36,11 +63,7 @@ async function onSubmit(): Promise<void> {
       authStore.userRole === 'ADMIN' ? { name: 'admin-dashboard' } : { name: 'marketplace' },
     );
   } catch (err: unknown) {
-    if (isAxiosError(err) && err.response?.status === 401) {
-      error.value = 'Credenciales incorrectas. Verifica tu email y contraseña.';
-    } else {
-      error.value = 'No se pudo iniciar sesión. Intenta de nuevo.';
-    }
+    error.value = loginErrorMessage(err);
   } finally {
     loading.value = false;
   }
@@ -50,7 +73,7 @@ async function onSubmit(): Promise<void> {
 <template>
   <div class="flex min-h-screen items-center justify-center bg-slate-50 px-4">
     <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-      <p class="text-sm font-medium uppercase tracking-wider text-brand-600">Urban Car</p>
+      <p class="text-sm font-medium uppercase tracking-wider text-brand-600">RentWheels</p>
       <h1 class="mt-1 text-2xl font-bold text-slate-900">Iniciar sesión</h1>
       <p class="mt-1 text-sm text-slate-600">Accede a tu cuenta para continuar.</p>
 
