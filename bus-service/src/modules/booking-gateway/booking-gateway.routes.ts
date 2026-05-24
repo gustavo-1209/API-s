@@ -48,8 +48,13 @@ async function forwardRequest(
   const targetUrl = buildTargetUrl(baseUrl, path, req);
 
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
+  'Content-Type': 'application/json',
+};
+
+const authorization = req.header('authorization');
+if (authorization) {
+  headers.Authorization = authorization;
+}
 
   const init: RequestInit = {
     method: req.method,
