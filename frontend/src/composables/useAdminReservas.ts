@@ -2,12 +2,30 @@ import { ref, type Ref } from 'vue';
 import { isAxiosError } from 'axios';
 import { adminApi } from '@/api/api';
 import { logApiKeysInDev } from '@/lib/admin-dev';
-import { unwrapApiList } from '@/lib/api-unwrap';
+import { unwrapApiData, unwrapApiList } from '@/lib/api-unwrap';
 import { useAdminVehiculosLookup } from '@/composables/useAdminVehiculosLookup';
-import { normalizeAdminReserva } from '@/mappers/admin.mapper';
+import {
+  buildAlquileresActivosIndex,
+  enrichAdminReservasConAlquiler,
+  normalizeAdminReserva,
+} from '@/mappers/admin.mapper';
 import type { AdminReservaRow } from '@/types/admin';
 
 const LOAD_ERROR = 'No se pudieron cargar las reservas. Intenta de nuevo más tarde.';
+
+function unwrapAlquileresActivosList(body: unknown): unknown[] {
+  try {
+    const payload = unwrapApiData<unknown>(body);
+    if (Array.isArray(payload)) return payload;
+    if (payload && typeof payload === 'object') {
+      const record = payload as Record<string, unknown>;
+      if (Array.isArray(record.data)) return record.data;
+    }
+  } catch {
+    /* ignore */
+  }
+  return unwrapApiList<unknown>(body);
+}
 
 export interface UseAdminReservasReturn {
   reservas: Ref<AdminReservaRow[]>;
@@ -35,9 +53,24 @@ export function useAdminReservas(): UseAdminReservasReturn {
       const rawList = unwrapApiList<unknown>(data);
       logApiKeysInDev('GET /reservas', rawList);
 
-      reservas.value = rawList
+      const rows = rawList
         .map((item) => normalizeAdminReserva(item, vehiculosById.value))
         .filter((row): row is AdminReservaRow => row !== null);
+
+      let alquileresIndex = new Map<string, { alquilerId: string; kmSalida: number | null }>();
+
+      try {
+        const alquileresRes = await adminApi.get<unknown>('/alquileres', {
+          params: { status: 'ACTIVO', limit: 200 },
+        });
+        const rawAlquileres = unwrapAlquileresActivosList(alquileresRes.data);
+        logApiKeysInDev('GET /alquileres?status=ACTIVO', rawAlquileres);
+        alquileresIndex = buildAlquileresActivosIndex(rawAlquileres);
+      } catch {
+        /* no romper tabla si falla el listado de alquileres */
+      }
+
+      reservas.value = enrichAdminReservasConAlquiler(rows, alquileresIndex);
     } catch (err: unknown) {
       reservas.value = [];
       if (isAxiosError(err) && !err.response) {

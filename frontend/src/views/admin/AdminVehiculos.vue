@@ -2,6 +2,7 @@
 import { onMounted } from 'vue';
 import AdminListCard from '@/components/admin/AdminListCard.vue';
 import { useAdminVehiculos } from '@/composables/useAdminVehiculos';
+import { vehicleStatusBadgeClass, vehicleStatusLabel } from '@/lib/vehicle-status';
 
 const { vehiculos, loading, error, fetchVehiculos } = useAdminVehiculos();
 
@@ -55,9 +56,11 @@ onMounted(() => {
             <td class="px-3 py-3 text-right text-slate-900">${{ row.precioPorDia }}</td>
             <td class="px-3 py-3">
               <span
-                class="inline-flex rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700"
+                class="inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium"
+                :class="vehicleStatusBadgeClass(row.estado)"
+                :title="`Estado en sistema: ${row.estado}`"
               >
-                {{ row.estado }}
+                {{ vehicleStatusLabel(row.estado) }}
               </span>
             </td>
           </tr>

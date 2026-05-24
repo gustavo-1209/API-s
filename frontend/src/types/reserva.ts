@@ -59,6 +59,14 @@ export interface CrearReservaResponse {
   diasTotal?: number;
 }
 
+/** Body de PATCH /reservas/{id} para confirmar (PENDIENTE → CONFIRMADA). */
+export interface ConfirmarReservaRequest {
+  status: 'CONFIRMADA';
+}
+
+/** Respuesta de PATCH /reservas/{id} (misma forma que detalle). */
+export type ConfirmarReservaResponse = ReservaDetalleResponse;
+
 /** Detalle de GET /reservas/{id}. */
 export interface ReservaDetalleResponse {
   id: string;

@@ -28,6 +28,43 @@ export interface AdminVehiculoRow {
   displayLabel: string;
 }
 
+/** Índice reservaId → alquiler activo (admin). */
+export interface AdminAlquilerActivoIndex {
+  alquilerId: string;
+  kmSalida: number | null;
+}
+
+export type EstadoVehiculoDevolucion = 'BUENO' | 'REGULAR' | 'MALO';
+
+/** Body POST {bookingApi}/alquileres */
+export interface IniciarAlquilerRequest {
+  reservaId: string;
+  kmSalida: number;
+  fechaInicio: string;
+  observaciones?: string;
+}
+
+export interface IniciarAlquilerResponse {
+  id: string;
+  reservaId: string;
+  kmSalida?: number;
+  status?: string;
+}
+
+/** Body POST {bookingApi}/devoluciones */
+export interface RegistrarDevolucionRequest {
+  alquilerId: string;
+  kmEntrada: number;
+  estadoVehiculo: EstadoVehiculoDevolucion;
+  cargoExtra?: number;
+  observaciones?: string;
+}
+
+export interface RegistrarDevolucionResponse {
+  id: string;
+  alquilerId?: string;
+}
+
 /** Fila normalizada: reservas (admin). */
 export interface AdminReservaRow {
   id: string;
@@ -38,6 +75,9 @@ export interface AdminReservaRow {
   fechaFin: string;
   total: string;
   estado: string;
+  /** Alquiler ACTIVO asociado (API admin o caché de sesión). */
+  alquilerId?: string | null;
+  kmSalida?: number | null;
 }
 
 /** Fila genérica para listados financieros y operativos. */
