@@ -16,12 +16,23 @@ import {
   ReservaServiceError,
 } from '@/composables/useReservas';
 import {
+  buildValoresPorDefectoFactura,
   calcularMontoPendiente,
+  calcularTotalesPagoReserva,
   cargarDetalleFinancieroReserva,
-  esPagoCompleto,
+  confirmarPago,
+  esPagoEstadoPendiente,
+  estadoFinancieroReserva,
+  etiquetaEstadoFinancieroReserva,
+  estadoUiGenerarFactura,
   FinancieroAdminError,
+  generarFacturaReserva,
+  mensajeErrorConfirmarPago,
+  mensajeErrorGenerarFactura,
   mensajeErrorRegistrarPago,
+  mensajeUiGenerarFactura,
   puedeRegistrarPagoReserva,
+  recargarDetalleFinancieroCompleto,
   recargarPagosYResumenReserva,
   registrarPagoReserva,
 } from '@/composables/useAdminReservaFinanciero';
@@ -50,8 +61,11 @@ const modalIniciar = ref(false);
 const modalDevolucion = ref(false);
 const modalDetalle = ref(false);
 const modalRegistrarPago = ref(false);
+const modalGenerarFactura = ref(false);
 const loadingDetalle = ref(false);
 const submittingPago = ref(false);
+const submittingFactura = ref(false);
+const confirmingPagoId = ref<string | null>(null);
 const detalleAdmin = ref<ReservaDetalleAdmin | null>(null);
 const detalleSuccess = ref<string | null>(null);
 const pagoFormError = ref<string | null>(null);
@@ -60,6 +74,14 @@ const reservaSeleccionada = ref<AdminReservaRow | null>(null);
 const montoPagoInput = ref('');
 const metodoPagoInput = ref<MetodoPagoAdmin>('EFECTIVO');
 const referenciaPagoInput = ref('');
+
+const facturaRucInput = ref('');
+const facturaRazonSocialInput = ref('');
+const facturaDescripcionInput = ref('');
+const facturaCantidadInput = ref('1');
+const facturaPrecioUnitInput = ref('');
+const facturaPagoId = ref<string | undefined>(undefined);
+const facturaFormError = ref<string | null>(null);
 
 const kmSalidaInput = ref('');
 const observacionesInicio = ref('');
@@ -72,23 +94,62 @@ const formError = ref<string | null>(null);
 const ESTADOS_DEVOLUCION: EstadoVehiculoDevolucion[] = ['BUENO', 'REGULAR', 'MALO'];
 const METODOS_PAGO: MetodoPagoAdmin[] = ['EFECTIVO', 'TARJETA', 'TRANSFERENCIA', 'OTRO'];
 
+const detalleTotalesPago = computed(() => {
+  if (!detalleAdmin.value) return null;
+  return calcularTotalesPagoReserva(detalleAdmin.value.reserva, detalleAdmin.value.pagos);
+});
+
 const detallePuedeRegistrarPago = computed(() => {
   if (!detalleAdmin.value) return false;
   return puedeRegistrarPagoReserva(
     detalleAdmin.value.reserva,
-    detalleAdmin.value.resumenPago,
+    detalleAdmin.value.pagos,
   );
-});
-
-const detallePagoCompleto = computed(() => {
-  if (!detalleAdmin.value) return false;
-  return esPagoCompleto(detalleAdmin.value.reserva, detalleAdmin.value.resumenPago);
 });
 
 const detalleMontoPendiente = computed(() => {
   if (!detalleAdmin.value) return null;
-  return calcularMontoPendiente(detalleAdmin.value.reserva, detalleAdmin.value.resumenPago);
+  return calcularMontoPendiente(detalleAdmin.value.reserva, detalleAdmin.value.pagos);
 });
+
+const detalleEstadoFinanciero = computed(() => {
+  if (!detalleAdmin.value) return 'sin-pagos' as const;
+  return estadoFinancieroReserva(detalleAdmin.value.reserva, detalleAdmin.value.pagos);
+});
+
+const detalleEtiquetaFinanciero = computed(() =>
+  etiquetaEstadoFinancieroReserva(detalleEstadoFinanciero.value),
+);
+
+const detalleEstadoFactura = computed(() => {
+  if (!detalleAdmin.value) return 'oculto-cancelada' as const;
+  return estadoUiGenerarFactura(
+    detalleAdmin.value.reserva,
+    detalleAdmin.value.resumenPago,
+    detalleAdmin.value.pagos,
+    detalleAdmin.value.facturas,
+  );
+});
+
+const detalleMensajeFactura = computed(() => {
+  if (!detalleAdmin.value) return null;
+  return mensajeUiGenerarFactura(
+    detalleEstadoFactura.value,
+    detalleAdmin.value.reserva,
+    detalleAdmin.value.pagos,
+  );
+});
+
+const detalleTextoSinRegistrarPago = computed(() => {
+  if (!detalleTotalesPago.value) return '';
+  if (detalleTotalesPago.value.reservaPagadaCompleta) return 'Pago completo';
+  if (detalleTotalesPago.value.saldoDisponibleParaRegistrar <= 0) {
+    return 'Sin saldo disponible para registrar';
+  }
+  return '';
+});
+
+const detallePuedeGenerarFactura = computed(() => detalleEstadoFactura.value === 'permitido');
 
 function normalizarEstado(estado: string): string {
   return estado.trim().toUpperCase();
@@ -179,9 +240,14 @@ function validarFormularioPago(): { monto: number } | null {
     return null;
   }
 
-  const pendiente = detalleMontoPendiente.value;
-  if (pendiente !== null && pendiente > 0 && monto > pendiente + 0.001) {
-    pagoFormError.value = `El monto no puede superar el saldo pendiente (${pendiente.toFixed(2)}).`;
+  const disponible = detalleTotalesPago.value?.saldoDisponibleParaRegistrar ?? null;
+  if (disponible !== null && disponible <= 0) {
+    pagoFormError.value = 'No hay saldo disponible para registrar más pagos.';
+    return null;
+  }
+  if (disponible !== null && monto > disponible + 0.001) {
+    pagoFormError.value =
+      'El monto supera el saldo disponible considerando pagos pendientes y confirmados.';
     return null;
   }
 
@@ -257,9 +323,124 @@ async function abrirModalDetalle(row: AdminReservaRow): Promise<void> {
   loadingDetalle.value = false;
 }
 
+function cerrarModalGenerarFactura(): void {
+  modalGenerarFactura.value = false;
+  facturaFormError.value = null;
+}
+
+function abrirModalGenerarFactura(): void {
+  if (!detalleAdmin.value || !detallePuedeGenerarFactura.value) return;
+
+  const defaults = buildValoresPorDefectoFactura(
+    detalleAdmin.value.reserva,
+    detalleAdmin.value.pagos,
+  );
+
+  facturaRucInput.value = defaults.rucCliente;
+  facturaRazonSocialInput.value = defaults.razonSocial;
+  facturaDescripcionInput.value = defaults.descripcion;
+  facturaCantidadInput.value = String(defaults.cantidad);
+  facturaPrecioUnitInput.value = defaults.precioUnit > 0 ? String(defaults.precioUnit) : '';
+  facturaPagoId.value = defaults.pagoId;
+  facturaFormError.value = null;
+  modalGenerarFactura.value = true;
+}
+
+function validarFormularioFactura(): {
+  detalles: { descripcion: string; cantidad: number; precioUnit: number };
+} | null {
+  const descripcion = facturaDescripcionInput.value.trim();
+  if (!descripcion) {
+    facturaFormError.value = 'La descripción es obligatoria.';
+    return null;
+  }
+
+  const cantidad = Number(String(facturaCantidadInput.value ?? '').trim());
+  if (!Number.isFinite(cantidad) || cantidad <= 0) {
+    facturaFormError.value = 'La cantidad debe ser mayor a 0.';
+    return null;
+  }
+
+  const precioUnit = Number(String(facturaPrecioUnitInput.value ?? '').trim());
+  if (!Number.isFinite(precioUnit) || precioUnit <= 0) {
+    facturaFormError.value = 'El precio unitario debe ser mayor a 0.';
+    return null;
+  }
+
+  return {
+    detalles: { descripcion, cantidad, precioUnit },
+  };
+}
+
+async function onConfirmarPagoEnDetalle(pagoId: string): Promise<void> {
+  if (!detalleAdmin.value) return;
+
+  confirmingPagoId.value = pagoId;
+
+  try {
+    await confirmarPago(pagoId);
+    detalleSuccess.value = 'Pago confirmado correctamente.';
+
+    const reserva = detalleAdmin.value.reserva;
+    const actualizado = await recargarDetalleFinancieroCompleto(reserva.id);
+    detalleAdmin.value = {
+      reserva,
+      ...actualizado,
+    };
+  } catch (err: unknown) {
+    const serviceErr =
+      err instanceof FinancieroAdminError
+        ? err
+        : new FinancieroAdminError('No se pudo confirmar el pago.');
+    detalleSuccess.value = null;
+    actionError.value = mensajeErrorConfirmarPago(serviceErr);
+  } finally {
+    confirmingPagoId.value = null;
+  }
+}
+
+async function onSubmitGenerarFactura(): Promise<void> {
+  if (!detalleAdmin.value || !detallePuedeGenerarFactura.value) return;
+
+  const parsed = validarFormularioFactura();
+  if (!parsed) return;
+
+  submittingFactura.value = true;
+  facturaFormError.value = null;
+
+  try {
+    await generarFacturaReserva({
+      reservaId: detalleAdmin.value.reserva.id,
+      pagoId: facturaPagoId.value,
+      rucCliente: facturaRucInput.value.trim() || undefined,
+      razonSocial: facturaRazonSocialInput.value.trim() || undefined,
+      detalles: [parsed.detalles],
+    });
+
+    detalleSuccess.value = 'Factura generada correctamente.';
+    cerrarModalGenerarFactura();
+
+    const reserva = detalleAdmin.value.reserva;
+    const actualizado = await recargarDetalleFinancieroCompleto(reserva.id);
+    detalleAdmin.value = {
+      reserva,
+      ...actualizado,
+    };
+  } catch (err: unknown) {
+    const serviceErr =
+      err instanceof FinancieroAdminError
+        ? err
+        : new FinancieroAdminError('No se pudo generar la factura.');
+    facturaFormError.value = mensajeErrorGenerarFactura(serviceErr);
+  } finally {
+    submittingFactura.value = false;
+  }
+}
+
 function cerrarModalDetalle(): void {
   modalDetalle.value = false;
   cerrarModalRegistrarPago();
+  cerrarModalGenerarFactura();
   detalleAdmin.value = null;
   detalleSuccess.value = null;
   loadingDetalle.value = false;
@@ -809,41 +990,59 @@ onMounted(() => {
                   Registrar pago
                 </button>
                 <span
-                  v-else-if="detallePagoCompleto"
+                  v-else-if="detalleTextoSinRegistrarPago"
                   class="text-xs font-medium text-slate-500"
                 >
-                  Pago completo
+                  {{ detalleTextoSinRegistrarPago }}
                 </span>
               </div>
-              <p
-                v-if="detalleAdmin.resumenPagoError"
-                class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
-                role="alert"
-              >
-                {{ detalleAdmin.resumenPagoError }}
-              </p>
               <dl
-                v-else-if="detalleAdmin.resumenPago"
+                v-if="detalleTotalesPago"
                 class="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2"
               >
                 <div>
                   <dt class="text-xs text-slate-500">Estado de pago</dt>
                   <dd class="mt-0.5 font-medium text-slate-900">
-                    {{ detalleAdmin.resumenPago.statusLabel }}
+                    {{ detalleEtiquetaFinanciero }}
                   </dd>
                 </div>
                 <div>
-                  <dt class="text-xs text-slate-500">Total pagado</dt>
+                  <dt class="text-xs text-slate-500">Total reserva</dt>
                   <dd class="mt-0.5 font-medium text-slate-900">
-                    {{ detalleAdmin.resumenPago.totalPagado }}
+                    ${{ detalleTotalesPago.totalReserva.toFixed(2) }}
                   </dd>
                 </div>
                 <div>
-                  <dt class="text-xs text-slate-500">Pagos en resumen</dt>
-                  <dd class="mt-0.5 text-slate-900">{{ detalleAdmin.resumenPago.cantidadPagos }}</dd>
+                  <dt class="text-xs text-slate-500">Pagado confirmado</dt>
+                  <dd class="mt-0.5 font-medium text-slate-900">
+                    ${{ detalleTotalesPago.totalPagadoConfirmado.toFixed(2) }}
+                  </dd>
+                </div>
+                <div v-if="detalleTotalesPago.totalPagadoPendiente > 0">
+                  <dt class="text-xs text-slate-500">Pagado pendiente (sin confirmar)</dt>
+                  <dd class="mt-0.5 text-amber-800">
+                    ${{ detalleTotalesPago.totalPagadoPendiente.toFixed(2) }}
+                  </dd>
+                </div>
+                <div>
+                  <dt class="text-xs text-slate-500">Saldo disponible para registrar</dt>
+                  <dd class="mt-0.5 font-medium text-slate-900">
+                    ${{ detalleTotalesPago.saldoDisponibleParaRegistrar.toFixed(2) }}
+                  </dd>
+                </div>
+                <div v-if="detalleTotalesPago.saldoPendienteParaFacturar > 0">
+                  <dt class="text-xs text-slate-500">Saldo pendiente de confirmación (factura)</dt>
+                  <dd class="mt-0.5 text-slate-600">
+                    ${{ detalleTotalesPago.saldoPendienteParaFacturar.toFixed(2) }}
+                  </dd>
                 </div>
               </dl>
-              <p v-else class="text-sm text-slate-500">Resumen de pago no disponible.</p>
+              <p
+                v-if="detalleAdmin.resumenPagoError"
+                class="mt-2 text-xs text-slate-500"
+              >
+                Resumen booking no disponible.
+              </p>
             </section>
 
             <!-- Pagos -->
@@ -883,9 +1082,18 @@ onMounted(() => {
                       {{ pago.metodo }} · {{ pago.referencia }}
                     </p>
                   </div>
-                  <div class="text-right text-xs text-slate-600">
+                  <div class="flex flex-col items-end gap-1.5 text-right text-xs text-slate-600">
                     <p>{{ pago.fecha }}</p>
                     <p class="font-medium text-slate-800">{{ pago.estado }}</p>
+                    <button
+                      v-if="esPagoEstadoPendiente(pago.estado)"
+                      type="button"
+                      class="rounded-md bg-sky-600 px-2 py-1 text-xs font-semibold text-white hover:bg-sky-700 disabled:opacity-60"
+                      :disabled="confirmingPagoId === pago.id"
+                      @click="onConfirmarPagoEnDetalle(pago.id)"
+                    >
+                      {{ confirmingPagoId === pago.id ? 'Confirmando…' : 'Confirmar pago' }}
+                    </button>
                   </div>
                 </li>
               </ul>
@@ -893,9 +1101,25 @@ onMounted(() => {
 
             <!-- Facturas -->
             <section>
-              <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
-                Facturas
-              </h3>
+              <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h3 class="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                  Facturas
+                </h3>
+                <button
+                  v-if="detallePuedeGenerarFactura"
+                  type="button"
+                  class="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700"
+                  @click="abrirModalGenerarFactura"
+                >
+                  Generar factura
+                </button>
+                <span
+                  v-else-if="detalleMensajeFactura && detalleEstadoFactura !== 'oculto-cancelada'"
+                  class="text-xs font-medium text-slate-500"
+                >
+                  {{ detalleMensajeFactura }}
+                </span>
+              </div>
               <p
                 v-if="detalleAdmin.facturasError"
                 class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
@@ -959,7 +1183,7 @@ onMounted(() => {
           v-if="detalleMontoPendiente !== null && detalleMontoPendiente > 0"
           class="mt-2 text-xs text-slate-500"
         >
-          Saldo pendiente sugerido:
+          Saldo disponible para registrar:
           <span class="font-medium text-slate-800">${{ detalleMontoPendiente.toFixed(2) }}</span>
         </p>
 
@@ -1027,6 +1251,122 @@ onMounted(() => {
               :disabled="submittingPago"
             >
               {{ submittingPago ? 'Registrando…' : 'Registrar pago' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </Teleport>
+
+  <!-- Modal generar factura -->
+  <Teleport to="body">
+    <div
+      v-if="modalGenerarFactura && detalleAdmin"
+      class="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-factura-title"
+    >
+      <div class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
+        <h2 id="modal-factura-title" class="text-lg font-semibold text-slate-900">
+          Generar factura
+        </h2>
+        <p class="mt-1 text-sm text-slate-600">
+          Reserva {{ detalleAdmin.reserva.codigo }}
+        </p>
+
+        <form class="mt-4 space-y-4" @submit.prevent="onSubmitGenerarFactura">
+          <div>
+            <label for="factura-ruc" class="block text-sm font-medium text-slate-700">
+              RUC / identificación
+            </label>
+            <input
+              id="factura-ruc"
+              v-model="facturaRucInput"
+              type="text"
+              maxlength="13"
+              class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              placeholder="Opcional"
+            />
+          </div>
+
+          <div>
+            <label for="factura-razon" class="block text-sm font-medium text-slate-700">
+              Razón social
+            </label>
+            <input
+              id="factura-razon"
+              v-model="facturaRazonSocialInput"
+              type="text"
+              maxlength="150"
+              class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              placeholder="Opcional"
+            />
+          </div>
+
+          <div>
+            <label for="factura-desc" class="block text-sm font-medium text-slate-700">
+              Descripción <span class="text-red-600">*</span>
+            </label>
+            <textarea
+              id="factura-desc"
+              v-model="facturaDescripcionInput"
+              rows="2"
+              required
+              class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            />
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label for="factura-cantidad" class="block text-sm font-medium text-slate-700">
+                Cantidad <span class="text-red-600">*</span>
+              </label>
+              <input
+                id="factura-cantidad"
+                v-model="facturaCantidadInput"
+                type="number"
+                min="1"
+                step="1"
+                required
+                class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              />
+            </div>
+            <div>
+              <label for="factura-precio" class="block text-sm font-medium text-slate-700">
+                Precio unitario <span class="text-red-600">*</span>
+              </label>
+              <input
+                id="factura-precio"
+                v-model="facturaPrecioUnitInput"
+                type="number"
+                min="0.01"
+                step="0.01"
+                required
+                class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              />
+            </div>
+          </div>
+
+          <p v-if="facturaFormError" class="text-sm text-red-600" role="alert">
+            {{ facturaFormError }}
+          </p>
+
+          <div class="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              :disabled="submittingFactura"
+              @click="cerrarModalGenerarFactura"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              class="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60"
+              :disabled="submittingFactura"
+            >
+              {{ submittingFactura ? 'Generando…' : 'Generar factura' }}
             </button>
           </div>
         </form>
