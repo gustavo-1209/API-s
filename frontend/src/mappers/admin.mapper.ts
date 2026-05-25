@@ -1,3 +1,4 @@
+import { unwrapApiData } from '@/lib/api-unwrap';
 import { obtenerAlquilerDeCache } from '@/lib/alquiler-reserva-cache';
 import type {
   AdminAlquilerActivoIndex,
@@ -527,6 +528,15 @@ export function normalizeAdminPagoDetalle(raw: unknown): AdminPago | null {
     fecha: formatDate(r.fechaPago ?? r.fecha ?? r.createdAt ?? r.pag_fecha),
     estado: getString(r, ['status', 'estado'], '—') || '—',
   };
+}
+
+/** Normaliza POST /admin/pagos. */
+export function normalizeRegistrarPagoResponse(body: unknown): AdminPago {
+  const pago = normalizeAdminPagoDetalle(unwrapApiData<unknown>(body));
+  if (!pago) {
+    throw new Error('Respuesta inválida al registrar el pago.');
+  }
+  return pago;
 }
 
 export function normalizeAdminFacturaDetalle(raw: unknown): AdminFactura | null {

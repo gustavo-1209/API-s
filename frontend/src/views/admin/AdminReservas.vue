@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import AdminListCard from '@/components/admin/AdminListCard.vue';
 import { useAdminReservas } from '@/composables/useAdminReservas';
 import { useAdminVehiculos } from '@/composables/useAdminVehiculos';
@@ -15,12 +15,26 @@ import {
   mensajeErrorConfirmarReserva,
   ReservaServiceError,
 } from '@/composables/useReservas';
-import { cargarDetalleFinancieroReserva } from '@/composables/useAdminReservaFinanciero';
+import {
+  calcularMontoPendiente,
+  cargarDetalleFinancieroReserva,
+  esPagoCompleto,
+  FinancieroAdminError,
+  mensajeErrorRegistrarPago,
+  puedeRegistrarPagoReserva,
+  recargarPagosYResumenReserva,
+  registrarPagoReserva,
+} from '@/composables/useAdminReservaFinanciero';
 import {
   eliminarAlquilerDeCache,
   guardarAlquilerEnCache,
 } from '@/lib/alquiler-reserva-cache';
-import type { AdminReservaRow, EstadoVehiculoDevolucion, ReservaDetalleAdmin } from '@/types/admin';
+import type {
+  AdminReservaRow,
+  EstadoVehiculoDevolucion,
+  MetodoPagoAdmin,
+  ReservaDetalleAdmin,
+} from '@/types/admin';
 
 const { reservas, loading, error, fetchReservas } = useAdminReservas();
 const { fetchVehiculos } = useAdminVehiculos();
@@ -35,9 +49,17 @@ const actionError = ref<string | null>(null);
 const modalIniciar = ref(false);
 const modalDevolucion = ref(false);
 const modalDetalle = ref(false);
+const modalRegistrarPago = ref(false);
 const loadingDetalle = ref(false);
+const submittingPago = ref(false);
 const detalleAdmin = ref<ReservaDetalleAdmin | null>(null);
+const detalleSuccess = ref<string | null>(null);
+const pagoFormError = ref<string | null>(null);
 const reservaSeleccionada = ref<AdminReservaRow | null>(null);
+
+const montoPagoInput = ref('');
+const metodoPagoInput = ref<MetodoPagoAdmin>('EFECTIVO');
+const referenciaPagoInput = ref('');
 
 const kmSalidaInput = ref('');
 const observacionesInicio = ref('');
@@ -48,6 +70,25 @@ const observacionesDevolucion = ref('');
 const formError = ref<string | null>(null);
 
 const ESTADOS_DEVOLUCION: EstadoVehiculoDevolucion[] = ['BUENO', 'REGULAR', 'MALO'];
+const METODOS_PAGO: MetodoPagoAdmin[] = ['EFECTIVO', 'TARJETA', 'TRANSFERENCIA', 'OTRO'];
+
+const detallePuedeRegistrarPago = computed(() => {
+  if (!detalleAdmin.value) return false;
+  return puedeRegistrarPagoReserva(
+    detalleAdmin.value.reserva,
+    detalleAdmin.value.resumenPago,
+  );
+});
+
+const detallePagoCompleto = computed(() => {
+  if (!detalleAdmin.value) return false;
+  return esPagoCompleto(detalleAdmin.value.reserva, detalleAdmin.value.resumenPago);
+});
+
+const detalleMontoPendiente = computed(() => {
+  if (!detalleAdmin.value) return null;
+  return calcularMontoPendiente(detalleAdmin.value.reserva, detalleAdmin.value.resumenPago);
+});
 
 function normalizarEstado(estado: string): string {
   return estado.trim().toUpperCase();
@@ -114,8 +155,89 @@ function cerrarModalDevolucion(): void {
   reservaSeleccionada.value = null;
 }
 
+function cerrarModalRegistrarPago(): void {
+  modalRegistrarPago.value = false;
+  pagoFormError.value = null;
+}
+
+function abrirModalRegistrarPago(): void {
+  if (!detalleAdmin.value || !detallePuedeRegistrarPago.value) return;
+
+  const pendiente = detalleMontoPendiente.value;
+  montoPagoInput.value = pendiente !== null && pendiente > 0 ? String(pendiente) : '';
+  metodoPagoInput.value = 'EFECTIVO';
+  referenciaPagoInput.value = '';
+  pagoFormError.value = null;
+  modalRegistrarPago.value = true;
+}
+
+function validarFormularioPago(): { monto: number } | null {
+  const raw = String(montoPagoInput.value ?? '').trim();
+  const monto = Number(raw);
+  if (!Number.isFinite(monto) || monto <= 0) {
+    pagoFormError.value = 'Ingresa un monto válido mayor a 0.';
+    return null;
+  }
+
+  const pendiente = detalleMontoPendiente.value;
+  if (pendiente !== null && pendiente > 0 && monto > pendiente + 0.001) {
+    pagoFormError.value = `El monto no puede superar el saldo pendiente (${pendiente.toFixed(2)}).`;
+    return null;
+  }
+
+  if (!metodoPagoInput.value.trim()) {
+    pagoFormError.value = 'Selecciona un método de pago.';
+    return null;
+  }
+
+  return { monto };
+}
+
+async function recargarDetalleFinancieroPagos(): Promise<void> {
+  if (!detalleAdmin.value) return;
+
+  const reserva = detalleAdmin.value.reserva;
+  const actualizado = await recargarPagosYResumenReserva(reserva.id);
+  detalleAdmin.value = {
+    ...detalleAdmin.value,
+    ...actualizado,
+  };
+}
+
+async function onSubmitRegistrarPago(): Promise<void> {
+  if (!detalleAdmin.value) return;
+
+  const parsed = validarFormularioPago();
+  if (!parsed) return;
+
+  submittingPago.value = true;
+  pagoFormError.value = null;
+
+  try {
+    await registrarPagoReserva({
+      reservaId: detalleAdmin.value.reserva.id,
+      monto: parsed.monto,
+      metodoPago: metodoPagoInput.value,
+      referencia: referenciaPagoInput.value.trim() || undefined,
+    });
+
+    detalleSuccess.value = 'Pago registrado correctamente.';
+    cerrarModalRegistrarPago();
+    await recargarDetalleFinancieroPagos();
+  } catch (err: unknown) {
+    const serviceErr =
+      err instanceof FinancieroAdminError
+        ? err
+        : new FinancieroAdminError('No se pudo registrar el pago.');
+    pagoFormError.value = mensajeErrorRegistrarPago(serviceErr);
+  } finally {
+    submittingPago.value = false;
+  }
+}
+
 async function abrirModalDetalle(row: AdminReservaRow): Promise<void> {
   modalDetalle.value = true;
+  detalleSuccess.value = null;
   loadingDetalle.value = true;
   detalleAdmin.value = {
     reserva: row,
@@ -137,7 +259,9 @@ async function abrirModalDetalle(row: AdminReservaRow): Promise<void> {
 
 function cerrarModalDetalle(): void {
   modalDetalle.value = false;
+  cerrarModalRegistrarPago();
   detalleAdmin.value = null;
+  detalleSuccess.value = null;
   loadingDetalle.value = false;
 }
 
@@ -662,11 +786,35 @@ onMounted(() => {
               </dl>
             </section>
 
+            <p
+              v-if="detalleSuccess"
+              class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900"
+              role="status"
+            >
+              {{ detalleSuccess }}
+            </p>
+
             <!-- Estado financiero -->
             <section class="mb-6">
-              <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
-                Estado financiero
-              </h3>
+              <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h3 class="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                  Estado financiero
+                </h3>
+                <button
+                  v-if="detallePuedeRegistrarPago"
+                  type="button"
+                  class="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
+                  @click="abrirModalRegistrarPago"
+                >
+                  Registrar pago
+                </button>
+                <span
+                  v-else-if="detallePagoCompleto"
+                  class="text-xs font-medium text-slate-500"
+                >
+                  Pago completo
+                </span>
+              </div>
               <p
                 v-if="detalleAdmin.resumenPagoError"
                 class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
@@ -700,9 +848,19 @@ onMounted(() => {
 
             <!-- Pagos -->
             <section class="mb-6">
-              <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
-                Pagos
-              </h3>
+              <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h3 class="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                  Pagos
+                </h3>
+                <button
+                  v-if="detallePuedeRegistrarPago"
+                  type="button"
+                  class="text-xs font-medium text-emerald-700 underline hover:text-emerald-900"
+                  @click="abrirModalRegistrarPago"
+                >
+                  + Registrar pago
+                </button>
+              </div>
               <p
                 v-if="detalleAdmin.pagosError"
                 class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
@@ -777,6 +935,101 @@ onMounted(() => {
             Cerrar
           </button>
         </div>
+      </div>
+    </div>
+  </Teleport>
+
+  <!-- Modal registrar pago -->
+  <Teleport to="body">
+    <div
+      v-if="modalRegistrarPago && detalleAdmin"
+      class="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-pago-title"
+    >
+      <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+        <h2 id="modal-pago-title" class="text-lg font-semibold text-slate-900">
+          Registrar pago
+        </h2>
+        <p class="mt-1 text-sm text-slate-600">
+          Reserva {{ detalleAdmin.reserva.codigo }}
+        </p>
+        <p
+          v-if="detalleMontoPendiente !== null && detalleMontoPendiente > 0"
+          class="mt-2 text-xs text-slate-500"
+        >
+          Saldo pendiente sugerido:
+          <span class="font-medium text-slate-800">${{ detalleMontoPendiente.toFixed(2) }}</span>
+        </p>
+
+        <form class="mt-4 space-y-4" @submit.prevent="onSubmitRegistrarPago">
+          <div>
+            <label for="pago-monto" class="block text-sm font-medium text-slate-700">
+              Monto <span class="text-red-600">*</span>
+            </label>
+            <input
+              id="pago-monto"
+              v-model="montoPagoInput"
+              type="number"
+              min="0.01"
+              step="0.01"
+              required
+              class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              placeholder="Ej. 72.00"
+            />
+          </div>
+
+          <div>
+            <label for="pago-metodo" class="block text-sm font-medium text-slate-700">
+              Método de pago <span class="text-red-600">*</span>
+            </label>
+            <select
+              id="pago-metodo"
+              v-model="metodoPagoInput"
+              required
+              class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            >
+              <option v-for="metodo in METODOS_PAGO" :key="metodo" :value="metodo">
+                {{ metodo }}
+              </option>
+            </select>
+          </div>
+
+          <div>
+            <label for="pago-referencia" class="block text-sm font-medium text-slate-700">
+              Referencia
+            </label>
+            <input
+              id="pago-referencia"
+              v-model="referenciaPagoInput"
+              type="text"
+              maxlength="100"
+              class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              placeholder="Opcional"
+            />
+          </div>
+
+          <p v-if="pagoFormError" class="text-sm text-red-600" role="alert">{{ pagoFormError }}</p>
+
+          <div class="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              :disabled="submittingPago"
+              @click="cerrarModalRegistrarPago"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+              :disabled="submittingPago"
+            >
+              {{ submittingPago ? 'Registrando…' : 'Registrar pago' }}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   </Teleport>

@@ -101,12 +101,26 @@ export interface AdminFactura {
   estado: string;
 }
 
+export type MetodoPagoAdmin = 'EFECTIVO' | 'TARJETA' | 'TRANSFERENCIA' | 'OTRO';
+
+/** Body POST /admin/pagos */
+export interface RegistrarPagoRequest {
+  reservaId: string;
+  monto: number;
+  metodoPago: MetodoPagoAdmin | string;
+  referencia?: string;
+}
+
+/** Respuesta POST /admin/pagos (normalizada a AdminPago). */
+export type RegistrarPagoResponse = AdminPago;
+
 /** Resumen de GET /booking/payment/{reservaId}. */
 export interface ResumenPagoReserva {
   reservaId: string;
   status: string;
   statusLabel: string;
   totalPagado: string;
+  totalPagadoNumero: number;
   cantidadPagos: number;
 }
 
