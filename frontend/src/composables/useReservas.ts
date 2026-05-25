@@ -7,6 +7,7 @@ import {
 } from '@/mappers/reserva.mapper';
 import { normalizeVehiculoDisponibilidadResponse } from '@/mappers/vehiculo-marketplace.mapper';
 import type {
+  CancelarReservaRequest,
   ConfirmarReservaRequest,
   CrearReservaRequest,
   CrearReservaResponse,
@@ -135,6 +136,39 @@ export function mensajeErrorConfirmarReserva(err: ReservaServiceError): string {
     return err.message || 'Estado inválido.';
   }
   return err.message || 'No se pudo confirmar la reserva. Intenta de nuevo.';
+}
+
+export async function cancelarReserva(reservaId: string): Promise<ReservaDetalleResponse> {
+  const body: CancelarReservaRequest = { estado: 'CANCELADA' };
+
+  try {
+    const { data } = await bookingApi.patch<unknown>(`/reservas/${reservaId}`, body);
+
+    assertSuccessWrapper(data, 'No se pudo cancelar la reserva.');
+    return normalizeReservaDetalleResponse(data);
+  } catch (err: unknown) {
+    if (err instanceof ReservaServiceError) throw err;
+    throw extractErrorMessage(err, 'No se pudo cancelar la reserva.');
+  }
+}
+
+export function mensajeErrorCancelarReserva(err: ReservaServiceError): string {
+  if (err.status === 400) {
+    return err.message || 'Solicitud inválida.';
+  }
+  if (err.status === 401 || err.status === 403) {
+    return 'Tu sesión expiró o no tienes permisos para esta acción.';
+  }
+  if (err.status === 404) {
+    return 'Reserva no encontrada.';
+  }
+  if (err.status === 422) {
+    return err.message || 'Transición de estado no permitida.';
+  }
+  if (err.status === 500) {
+    return 'No se pudo cancelar la reserva en este estado.';
+  }
+  return err.message || 'No se pudo cancelar la reserva.';
 }
 
 export async function consultarPago(reservaId: string): Promise<PaymentResponse> {

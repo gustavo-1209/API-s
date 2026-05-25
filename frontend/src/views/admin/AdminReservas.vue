@@ -11,7 +11,9 @@ import {
   registrarDevolucion,
 } from '@/composables/useAlquileres';
 import {
+  cancelarReserva,
   confirmarReserva,
+  mensajeErrorCancelarReserva,
   mensajeErrorConfirmarReserva,
   ReservaServiceError,
 } from '@/composables/useReservas';
@@ -51,6 +53,7 @@ const { reservas, loading, error, fetchReservas } = useAdminReservas();
 const { fetchVehiculos } = useAdminVehiculos();
 
 const confirmingReservaId = ref<string | null>(null);
+const cancelingReservaId = ref<string | null>(null);
 const startingReservaId = ref<string | null>(null);
 const returningReservaId = ref<string | null>(null);
 
@@ -59,6 +62,7 @@ const actionError = ref<string | null>(null);
 
 const modalIniciar = ref(false);
 const modalDevolucion = ref(false);
+const modalCancelar = ref(false);
 const modalDetalle = ref(false);
 const modalRegistrarPago = ref(false);
 const modalGenerarFactura = ref(false);
@@ -156,6 +160,10 @@ function normalizarEstado(estado: string): string {
 }
 
 function puedeConfirmar(row: AdminReservaRow): boolean {
+  return normalizarEstado(row.estado) === 'PENDIENTE';
+}
+
+function puedeCancelar(row: AdminReservaRow): boolean {
   return normalizarEstado(row.estado) === 'PENDIENTE';
 }
 
@@ -468,6 +476,44 @@ async function onConfirmarReserva(row: AdminReservaRow): Promise<void> {
   }
 }
 
+function abrirModalCancelar(row: AdminReservaRow): void {
+  if (!puedeCancelar(row)) return;
+  reservaSeleccionada.value = row;
+  limpiarMensajes();
+  modalCancelar.value = true;
+}
+
+function cerrarModalCancelar(): void {
+  modalCancelar.value = false;
+  if (!modalIniciar.value && !modalDevolucion.value) {
+    reservaSeleccionada.value = null;
+  }
+}
+
+async function onConfirmCancelarReserva(): Promise<void> {
+  const row = reservaSeleccionada.value;
+  if (!row || !puedeCancelar(row)) return;
+
+  cancelingReservaId.value = row.id;
+  limpiarMensajes();
+  actionSuccess.value = null;
+
+  try {
+    await cancelarReserva(row.id);
+    actionSuccess.value = 'Reserva cancelada correctamente.';
+    cerrarModalCancelar();
+    await fetchReservas();
+  } catch (err: unknown) {
+    const serviceErr =
+      err instanceof ReservaServiceError
+        ? err
+        : new ReservaServiceError('No se pudo cancelar la reserva.');
+    actionError.value = mensajeErrorCancelarReserva(serviceErr);
+  } finally {
+    cancelingReservaId.value = null;
+  }
+}
+
 function validarKmSalida(): number | null {
   const raw = String(kmSalidaInput.value ?? '').trim();
   const n = Number(raw);
@@ -683,14 +729,24 @@ onMounted(() => {
                   v-if="puedeConfirmar(row)"
                   type="button"
                   class="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
-                  :disabled="confirmingReservaId === row.id"
+                  :disabled="confirmingReservaId === row.id || cancelingReservaId === row.id"
                   @click="onConfirmarReserva(row)"
                 >
                   {{ confirmingReservaId === row.id ? 'Confirmando…' : 'Confirmar reserva' }}
                 </button>
 
                 <button
-                  v-else-if="puedeIniciar(row)"
+                  v-if="puedeCancelar(row)"
+                  type="button"
+                  class="rounded-lg border border-red-300 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  :disabled="cancelingReservaId === row.id || confirmingReservaId === row.id"
+                  @click="abrirModalCancelar(row)"
+                >
+                  {{ cancelingReservaId === row.id ? 'Cancelando…' : 'Cancelar reserva' }}
+                </button>
+
+                <button
+                  v-if="puedeIniciar(row)"
                   type="button"
                   class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
                   :disabled="startingReservaId === row.id"
@@ -700,7 +756,7 @@ onMounted(() => {
                 </button>
 
                 <button
-                  v-else-if="puedeDevolver(row)"
+                  v-if="puedeDevolver(row)"
                   type="button"
                   class="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
                   :disabled="returningReservaId === row.id"
@@ -709,11 +765,11 @@ onMounted(() => {
                   Registrar devolución
                 </button>
 
-                <span v-else-if="esActivaSinAlquiler(row)" class="text-xs text-amber-700">
+                <span v-if="esActivaSinAlquiler(row)" class="text-xs text-amber-700">
                   Alquiler en curso
                 </span>
 
-                <span v-else-if="etiquetaEstadoFinal(row)" class="text-xs text-slate-500">
+                <span v-if="etiquetaEstadoFinal(row)" class="text-xs text-slate-500">
                   {{ etiquetaEstadoFinal(row) }}
                 </span>
               </div>
@@ -723,6 +779,48 @@ onMounted(() => {
       </table>
     </div>
   </AdminListCard>
+
+  <!-- Modal cancelar reserva -->
+  <Teleport to="body">
+    <div
+      v-if="modalCancelar"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-cancelar-title"
+    >
+      <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+        <h2 id="modal-cancelar-title" class="text-lg font-semibold text-slate-900">
+          Cancelar reserva
+        </h2>
+        <p v-if="reservaSeleccionada" class="mt-1 text-sm text-slate-600">
+          Reserva {{ reservaSeleccionada.codigo }}
+        </p>
+        <p class="mt-4 text-sm text-slate-700">
+          ¿Seguro que deseas cancelar esta reserva? Esta acción cambiará la reserva a CANCELADA.
+        </p>
+
+        <div class="mt-6 flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            :disabled="Boolean(cancelingReservaId)"
+            @click="cerrarModalCancelar"
+          >
+            Volver
+          </button>
+          <button
+            type="button"
+            class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+            :disabled="Boolean(cancelingReservaId)"
+            @click="onConfirmCancelarReserva"
+          >
+            {{ cancelingReservaId ? 'Cancelando…' : 'Sí, cancelar reserva' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 
   <!-- Modal iniciar alquiler -->
   <Teleport to="body">

@@ -64,8 +64,15 @@ export interface ConfirmarReservaRequest {
   status: 'CONFIRMADA';
 }
 
+/** Body de PATCH /reservas/{id} para cancelar (PENDIENTE → CANCELADA). */
+export interface CancelarReservaRequest {
+  estado: 'CANCELADA';
+}
+
 /** Respuesta de PATCH /reservas/{id} (misma forma que detalle). */
 export type ConfirmarReservaResponse = ReservaDetalleResponse;
+
+export type CancelarReservaResponse = ReservaDetalleResponse;
 
 /** Detalle de GET /reservas/{id}. */
 export interface ReservaDetalleResponse {
