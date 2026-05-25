@@ -49,8 +49,12 @@ export interface Vehiculo {
   status?: VehiculoStatus | null;
   /** Solo si el backend lo envía en el DTO. */
   disponible?: boolean | null;
-  /** Solo si el backend lo envía en el DTO. */
+  /** Si false, inventario DISPONIBLE pero no admite nueva reserva. */
+  disponibleParaReserva?: boolean | null;
+  /** Si true, hay reserva PENDIENTE/CONFIRMADA sin alquiler iniciado. */
   reservaActiva?: boolean | null;
+  /** Mensaje opcional para la UI (p. ej. motivo de bloqueo). */
+  motivoNoDisponible?: string | null;
   isActive?: boolean | null;
   modelo?: Modelo | null;
   categoria?: Categoria | null;
@@ -95,6 +99,7 @@ export interface VehiculoCard {
   status: VehiculoStatus;
   /** Solo si el backend lo envía en el listado. */
   disponible?: boolean;
-  /** Solo si el backend lo envía en el listado. */
+  disponibleParaReserva?: boolean;
   reservaActiva?: boolean;
+  motivoNoDisponible?: string;
 }

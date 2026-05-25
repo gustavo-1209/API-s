@@ -37,6 +37,12 @@ export function mapVehiculoToCard(vehiculo: Vehiculo): VehiculoCard {
   if (typeof vehiculo.reservaActiva === 'boolean') {
     card.reservaActiva = vehiculo.reservaActiva;
   }
+  if (typeof vehiculo.disponibleParaReserva === 'boolean') {
+    card.disponibleParaReserva = vehiculo.disponibleParaReserva;
+  }
+  if (typeof vehiculo.motivoNoDisponible === 'string' && vehiculo.motivoNoDisponible.trim()) {
+    card.motivoNoDisponible = vehiculo.motivoNoDisponible.trim();
+  }
 
   return card;
 }

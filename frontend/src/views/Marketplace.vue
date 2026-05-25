@@ -6,9 +6,11 @@ import UiErrorAlert from '@/components/ui/UiErrorAlert.vue';
 import UiSpinner from '@/components/ui/UiSpinner.vue';
 import { useVehiculos } from '@/composables/useVehiculos';
 import {
-  isVehiculoReservable,
-  vehicleStatusBadgeClass,
-  vehicleStatusLabel,
+  isVehiculoReservableEnMarketplace,
+  vehicleMarketplaceBadgeClass,
+  vehicleMarketplaceButtonLabel,
+  vehicleMarketplaceLabel,
+  vehicleMarketplaceMotivoHint,
 } from '@/lib/vehicle-status';
 import type { VehiculoCard } from '@/types/vehiculo';
 
@@ -27,24 +29,16 @@ function formatPrecio(precio: number): string {
   }).format(precio);
 }
 
-function isDisponible(vehiculo: VehiculoCard): boolean {
-  if (vehiculo.disponible === false) return false;
-  if (vehiculo.reservaActiva === true) return false;
-  return isVehiculoReservable(vehiculo.status);
+function puedeConsultarReserva(vehiculo: VehiculoCard): boolean {
+  return isVehiculoReservableEnMarketplace(vehiculo);
 }
 
-function badgeTexto(vehiculo: VehiculoCard): string {
-  if (isDisponible(vehiculo)) return 'Disponible';
-  return vehicleStatusLabel(vehiculo.status);
+function motivoHint(vehiculo: VehiculoCard): string | null {
+  return vehicleMarketplaceMotivoHint(vehiculo);
 }
 
-function badgeClases(vehiculo: VehiculoCard): string {
-  if (isDisponible(vehiculo)) return 'bg-emerald-100 text-emerald-800';
-  return vehicleStatusBadgeClass(vehiculo.status);
-}
-
-function reservar(vehiculo: VehiculoCard): void {
-  if (!isDisponible(vehiculo)) return;
+function irAReserva(vehiculo: VehiculoCard): void {
+  if (!puedeConsultarReserva(vehiculo)) return;
   router.push({ name: 'reserva', params: { vehiculoId: vehiculo.id } });
 }
 </script>
@@ -53,10 +47,13 @@ function reservar(vehiculo: VehiculoCard): void {
   <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
     <div class="mb-8">
       <h1 class="text-2xl font-bold text-slate-900 sm:text-3xl">Catálogo de vehículos</h1>
-      <p class="mt-1 text-slate-600">Encuentra el auto ideal y reserva en minutos.</p>
+      <p class="mt-1 text-slate-600">
+        Consulta disponibilidad y reserva. Un vehículo puede figurar en inventario aunque tenga una
+        reserva en curso.
+      </p>
     </div>
 
-    <UiSpinner v-if="loading" label="Cargando vehículos disponibles…" />
+    <UiSpinner v-if="loading" label="Cargando vehículos…" />
 
     <UiErrorAlert
       v-else-if="error"
@@ -67,8 +64,8 @@ function reservar(vehiculo: VehiculoCard): void {
 
     <UiEmptyState
       v-else-if="vehiculos.length === 0"
-      title="No hay autos disponibles"
-      message="En este momento no tenemos vehículos en el catálogo. Vuelve a intentar más tarde."
+      title="No hay autos en el catálogo"
+      message="En este momento no tenemos vehículos listados. Vuelve a intentar más tarde."
     />
 
     <div v-else class="grid items-stretch gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -76,7 +73,7 @@ function reservar(vehiculo: VehiculoCard): void {
         v-for="vehiculo in vehiculos"
         :key="vehiculo.id"
         class="group flex min-h-[22rem] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:border-brand-200 hover:shadow-md"
-        :class="!isDisponible(vehiculo) && 'opacity-90'"
+        :class="!puedeConsultarReserva(vehiculo) && 'opacity-90'"
       >
         <div class="relative aspect-[4/3] shrink-0 overflow-hidden bg-slate-100">
           <img
@@ -100,10 +97,10 @@ function reservar(vehiculo: VehiculoCard): void {
           </div>
           <span
             class="absolute right-3 top-3 rounded-full px-2.5 py-0.5 text-xs font-semibold"
-            :class="badgeClases(vehiculo)"
-            :title="vehiculo.status ? `Estado: ${vehiculo.status}` : undefined"
+            :class="vehicleMarketplaceBadgeClass(vehiculo)"
+            :title="motivoHint(vehiculo) ?? (vehiculo.status ? `Estado inventario: ${vehiculo.status}` : undefined)"
           >
-            {{ badgeTexto(vehiculo) }}
+            {{ vehicleMarketplaceLabel(vehiculo) }}
           </span>
         </div>
 
@@ -121,18 +118,27 @@ function reservar(vehiculo: VehiculoCard): void {
             <span class="text-sm font-normal text-slate-500">/ día</span>
           </p>
 
+          <p
+            v-if="motivoHint(vehiculo) && !puedeConsultarReserva(vehiculo)"
+            class="mt-3 text-xs text-amber-800"
+            :title="motivoHint(vehiculo) ?? undefined"
+          >
+            {{ motivoHint(vehiculo) }}
+          </p>
+
           <button
             type="button"
             class="mt-auto w-full rounded-xl px-4 py-3 text-sm font-semibold shadow-sm transition focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2"
             :class="
-              isDisponible(vehiculo)
+              puedeConsultarReserva(vehiculo)
                 ? 'bg-brand-600 text-white hover:bg-brand-700'
                 : 'cursor-not-allowed bg-slate-200 text-slate-500'
             "
-            :disabled="!isDisponible(vehiculo)"
-            @click="reservar(vehiculo)"
+            :disabled="!puedeConsultarReserva(vehiculo)"
+            :title="motivoHint(vehiculo) ?? undefined"
+            @click="irAReserva(vehiculo)"
           >
-            {{ isDisponible(vehiculo) ? 'Reservar' : badgeTexto(vehiculo) }}
+            {{ vehicleMarketplaceButtonLabel(vehiculo) }}
           </button>
         </div>
       </article>
