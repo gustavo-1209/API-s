@@ -80,6 +80,47 @@ export interface AdminReservaRow {
   kmSalida?: number | null;
 }
 
+/** Pago normalizado para detalle de reserva (admin). */
+export interface AdminPago {
+  id: string;
+  referencia: string;
+  monto: string;
+  metodo: string;
+  fecha: string;
+  estado: string;
+}
+
+/** Factura normalizada para detalle de reserva (admin). */
+export interface AdminFactura {
+  id: string;
+  numero: string;
+  cliente: string;
+  subtotal: string;
+  total: string;
+  fecha: string;
+  estado: string;
+}
+
+/** Resumen de GET /booking/payment/{reservaId}. */
+export interface ResumenPagoReserva {
+  reservaId: string;
+  status: string;
+  statusLabel: string;
+  totalPagado: string;
+  cantidadPagos: number;
+}
+
+/** Detalle administrativo de una reserva (solo lectura). */
+export interface ReservaDetalleAdmin {
+  reserva: AdminReservaRow;
+  resumenPago: ResumenPagoReserva | null;
+  resumenPagoError: string | null;
+  pagos: AdminPago[];
+  pagosError: string | null;
+  facturas: AdminFactura[];
+  facturasError: string | null;
+}
+
 /** Fila genérica para listados financieros y operativos. */
 export interface AdminTableRow {
   id: string;

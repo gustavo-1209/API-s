@@ -15,11 +15,12 @@ import {
   mensajeErrorConfirmarReserva,
   ReservaServiceError,
 } from '@/composables/useReservas';
+import { cargarDetalleFinancieroReserva } from '@/composables/useAdminReservaFinanciero';
 import {
   eliminarAlquilerDeCache,
   guardarAlquilerEnCache,
 } from '@/lib/alquiler-reserva-cache';
-import type { AdminReservaRow, EstadoVehiculoDevolucion } from '@/types/admin';
+import type { AdminReservaRow, EstadoVehiculoDevolucion, ReservaDetalleAdmin } from '@/types/admin';
 
 const { reservas, loading, error, fetchReservas } = useAdminReservas();
 const { fetchVehiculos } = useAdminVehiculos();
@@ -33,6 +34,9 @@ const actionError = ref<string | null>(null);
 
 const modalIniciar = ref(false);
 const modalDevolucion = ref(false);
+const modalDetalle = ref(false);
+const loadingDetalle = ref(false);
+const detalleAdmin = ref<ReservaDetalleAdmin | null>(null);
 const reservaSeleccionada = ref<AdminReservaRow | null>(null);
 
 const kmSalidaInput = ref('');
@@ -108,6 +112,33 @@ function abrirModalDevolucion(row: AdminReservaRow): void {
 function cerrarModalDevolucion(): void {
   modalDevolucion.value = false;
   reservaSeleccionada.value = null;
+}
+
+async function abrirModalDetalle(row: AdminReservaRow): Promise<void> {
+  modalDetalle.value = true;
+  loadingDetalle.value = true;
+  detalleAdmin.value = {
+    reserva: row,
+    resumenPago: null,
+    resumenPagoError: null,
+    pagos: [],
+    pagosError: null,
+    facturas: [],
+    facturasError: null,
+  };
+
+  const financiero = await cargarDetalleFinancieroReserva(row.id);
+  detalleAdmin.value = {
+    reserva: row,
+    ...financiero,
+  };
+  loadingDetalle.value = false;
+}
+
+function cerrarModalDetalle(): void {
+  modalDetalle.value = false;
+  detalleAdmin.value = null;
+  loadingDetalle.value = false;
 }
 
 async function onConfirmarReserva(row: AdminReservaRow): Promise<void> {
@@ -333,46 +364,54 @@ onMounted(() => {
                 {{ row.estado }}
               </span>
             </td>
-            <td class="px-3 py-3">
-              <button
-                v-if="puedeConfirmar(row)"
-                type="button"
-                class="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
-                :disabled="confirmingReservaId === row.id"
-                @click="onConfirmarReserva(row)"
-              >
-                {{ confirmingReservaId === row.id ? 'Confirmando…' : 'Confirmar reserva' }}
-              </button>
+            <td class="min-w-[140px] px-3 py-3">
+              <div class="flex flex-col items-start gap-1.5">
+                <button
+                  type="button"
+                  class="text-xs font-medium text-slate-600 underline decoration-slate-300 hover:text-brand-700 hover:decoration-brand-400"
+                  @click="abrirModalDetalle(row)"
+                >
+                  Ver detalle
+                </button>
 
-              <button
-                v-else-if="puedeIniciar(row)"
-                type="button"
-                class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
-                :disabled="startingReservaId === row.id"
-                @click="abrirModalIniciar(row)"
-              >
-                Iniciar alquiler
-              </button>
+                <button
+                  v-if="puedeConfirmar(row)"
+                  type="button"
+                  class="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  :disabled="confirmingReservaId === row.id"
+                  @click="onConfirmarReserva(row)"
+                >
+                  {{ confirmingReservaId === row.id ? 'Confirmando…' : 'Confirmar reserva' }}
+                </button>
 
-              <button
-                v-else-if="puedeDevolver(row)"
-                type="button"
-                class="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
-                :disabled="returningReservaId === row.id"
-                @click="abrirModalDevolucion(row)"
-              >
-                Registrar devolución
-              </button>
+                <button
+                  v-else-if="puedeIniciar(row)"
+                  type="button"
+                  class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  :disabled="startingReservaId === row.id"
+                  @click="abrirModalIniciar(row)"
+                >
+                  Iniciar alquiler
+                </button>
 
-              <span v-else-if="esActivaSinAlquiler(row)" class="text-xs text-amber-700">
-                Alquiler en curso
-              </span>
+                <button
+                  v-else-if="puedeDevolver(row)"
+                  type="button"
+                  class="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  :disabled="returningReservaId === row.id"
+                  @click="abrirModalDevolucion(row)"
+                >
+                  Registrar devolución
+                </button>
 
-              <span v-else-if="etiquetaEstadoFinal(row)" class="text-xs text-slate-500">
-                {{ etiquetaEstadoFinal(row) }}
-              </span>
+                <span v-else-if="esActivaSinAlquiler(row)" class="text-xs text-amber-700">
+                  Alquiler en curso
+                </span>
 
-              <span v-else class="text-xs text-slate-400">—</span>
+                <span v-else-if="etiquetaEstadoFinal(row)" class="text-xs text-slate-500">
+                  {{ etiquetaEstadoFinal(row) }}
+                </span>
+              </div>
             </td>
           </tr>
         </tbody>
@@ -551,6 +590,193 @@ onMounted(() => {
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  </Teleport>
+
+  <!-- Modal detalle reserva (solo lectura) -->
+  <Teleport to="body">
+    <div
+      v-if="modalDetalle"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-detalle-title"
+    >
+      <div class="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-2xl bg-white shadow-xl">
+        <div class="flex shrink-0 items-start justify-between border-b border-slate-200 px-6 py-4">
+          <div>
+            <h2 id="modal-detalle-title" class="text-lg font-semibold text-slate-900">
+              Detalle de reserva
+            </h2>
+            <p v-if="detalleAdmin" class="mt-0.5 font-mono text-sm text-slate-600">
+              {{ detalleAdmin.reserva.codigo }}
+            </p>
+          </div>
+          <button
+            type="button"
+            class="rounded-lg p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+            aria-label="Cerrar"
+            @click="cerrarModalDetalle"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div class="overflow-y-auto px-6 py-4">
+          <div v-if="loadingDetalle" class="flex items-center justify-center py-12 text-sm text-slate-500">
+            Cargando detalle…
+          </div>
+
+          <template v-else-if="detalleAdmin">
+            <!-- Información de reserva -->
+            <section class="mb-6">
+              <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
+                Información de reserva
+              </h3>
+              <dl class="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <dt class="text-xs text-slate-500">Estado</dt>
+                  <dd class="mt-0.5 font-medium text-slate-900">{{ detalleAdmin.reserva.estado }}</dd>
+                </div>
+                <div>
+                  <dt class="text-xs text-slate-500">Total</dt>
+                  <dd class="mt-0.5 font-medium text-slate-900">${{ detalleAdmin.reserva.total }}</dd>
+                </div>
+                <div class="sm:col-span-2">
+                  <dt class="text-xs text-slate-500">Vehículo</dt>
+                  <dd class="mt-0.5 text-slate-900">{{ detalleAdmin.reserva.vehiculo }}</dd>
+                </div>
+                <div class="sm:col-span-2">
+                  <dt class="text-xs text-slate-500">Cliente</dt>
+                  <dd class="mt-0.5 text-slate-900">{{ detalleAdmin.reserva.cliente }}</dd>
+                </div>
+                <div>
+                  <dt class="text-xs text-slate-500">Fecha inicio</dt>
+                  <dd class="mt-0.5 text-slate-900">{{ detalleAdmin.reserva.fechaInicio }}</dd>
+                </div>
+                <div>
+                  <dt class="text-xs text-slate-500">Fecha fin</dt>
+                  <dd class="mt-0.5 text-slate-900">{{ detalleAdmin.reserva.fechaFin }}</dd>
+                </div>
+              </dl>
+            </section>
+
+            <!-- Estado financiero -->
+            <section class="mb-6">
+              <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
+                Estado financiero
+              </h3>
+              <p
+                v-if="detalleAdmin.resumenPagoError"
+                class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+                role="alert"
+              >
+                {{ detalleAdmin.resumenPagoError }}
+              </p>
+              <dl
+                v-else-if="detalleAdmin.resumenPago"
+                class="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2"
+              >
+                <div>
+                  <dt class="text-xs text-slate-500">Estado de pago</dt>
+                  <dd class="mt-0.5 font-medium text-slate-900">
+                    {{ detalleAdmin.resumenPago.statusLabel }}
+                  </dd>
+                </div>
+                <div>
+                  <dt class="text-xs text-slate-500">Total pagado</dt>
+                  <dd class="mt-0.5 font-medium text-slate-900">
+                    {{ detalleAdmin.resumenPago.totalPagado }}
+                  </dd>
+                </div>
+                <div>
+                  <dt class="text-xs text-slate-500">Pagos en resumen</dt>
+                  <dd class="mt-0.5 text-slate-900">{{ detalleAdmin.resumenPago.cantidadPagos }}</dd>
+                </div>
+              </dl>
+              <p v-else class="text-sm text-slate-500">Resumen de pago no disponible.</p>
+            </section>
+
+            <!-- Pagos -->
+            <section class="mb-6">
+              <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
+                Pagos
+              </h3>
+              <p
+                v-if="detalleAdmin.pagosError"
+                class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+                role="alert"
+              >
+                {{ detalleAdmin.pagosError }}
+              </p>
+              <p v-else-if="detalleAdmin.pagos.length === 0" class="text-sm text-slate-500">
+                Sin pagos registrados.
+              </p>
+              <ul v-else class="divide-y divide-slate-100 rounded-lg border border-slate-200">
+                <li
+                  v-for="pago in detalleAdmin.pagos"
+                  :key="pago.id"
+                  class="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm"
+                >
+                  <div>
+                    <p class="font-medium text-slate-900">{{ pago.monto }}</p>
+                    <p class="text-xs text-slate-500">
+                      {{ pago.metodo }} · {{ pago.referencia }}
+                    </p>
+                  </div>
+                  <div class="text-right text-xs text-slate-600">
+                    <p>{{ pago.fecha }}</p>
+                    <p class="font-medium text-slate-800">{{ pago.estado }}</p>
+                  </div>
+                </li>
+              </ul>
+            </section>
+
+            <!-- Facturas -->
+            <section>
+              <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
+                Facturas
+              </h3>
+              <p
+                v-if="detalleAdmin.facturasError"
+                class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+                role="alert"
+              >
+                {{ detalleAdmin.facturasError }}
+              </p>
+              <p v-else-if="detalleAdmin.facturas.length === 0" class="text-sm text-slate-500">
+                Sin facturas emitidas.
+              </p>
+              <ul v-else class="divide-y divide-slate-100 rounded-lg border border-slate-200">
+                <li
+                  v-for="factura in detalleAdmin.facturas"
+                  :key="factura.id"
+                  class="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm"
+                >
+                  <div>
+                    <p class="font-medium text-slate-900">{{ factura.numero }}</p>
+                    <p class="text-xs text-slate-500">{{ factura.cliente }}</p>
+                  </div>
+                  <div class="text-right text-xs text-slate-600">
+                    <p class="font-medium text-slate-900">{{ factura.total }}</p>
+                    <p>{{ factura.fecha }} · {{ factura.estado }}</p>
+                  </div>
+                </li>
+              </ul>
+            </section>
+          </template>
+        </div>
+
+        <div class="shrink-0 border-t border-slate-200 px-6 py-4">
+          <button
+            type="button"
+            class="w-full rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 sm:w-auto"
+            @click="cerrarModalDetalle"
+          >
+            Cerrar
+          </button>
+        </div>
       </div>
     </div>
   </Teleport>
