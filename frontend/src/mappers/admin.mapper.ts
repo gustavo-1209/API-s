@@ -2,6 +2,8 @@ import { obtenerAlquilerDeCache } from '@/lib/alquiler-reserva-cache';
 import type {
   AdminAlquilerActivoIndex,
   AdminCatalogMaps,
+  AdminFactura,
+  AdminPago,
   AdminReservaRow,
   AdminTableRow,
   AdminVehiculoRow,
@@ -510,7 +512,7 @@ export function normalizeAdminReserva(
   };
 }
 
-export function normalizeAdminPago(raw: unknown): AdminTableRow | null {
+export function normalizeAdminPagoDetalle(raw: unknown): AdminPago | null {
   const r = asRecord(raw);
   const id = getString(r, ['id']);
   if (!id) return null;
@@ -520,11 +522,6 @@ export function normalizeAdminPago(raw: unknown): AdminTableRow | null {
   return {
     id,
     referencia: formatReference(referencia),
-    reserva: formatReference(
-      getString(r, ['codigoReserva']) ||
-        getNestedString(r, ['reserva.codigoReserva']) ||
-        r.reservaId,
-    ),
     monto: formatMoney(r.monto ?? r.amount ?? r.pag_monto),
     metodo: getString(r, ['metodoPago', 'metodo', 'paymentMethod'], '—') || '—',
     fecha: formatDate(r.fechaPago ?? r.fecha ?? r.createdAt ?? r.pag_fecha),
@@ -532,7 +529,7 @@ export function normalizeAdminPago(raw: unknown): AdminTableRow | null {
   };
 }
 
-export function normalizeAdminFactura(raw: unknown): AdminTableRow | null {
+export function normalizeAdminFacturaDetalle(raw: unknown): AdminFactura | null {
   const r = asRecord(raw);
   const id = getString(r, ['id']);
   if (!id) return null;
@@ -541,11 +538,49 @@ export function normalizeAdminFactura(raw: unknown): AdminTableRow | null {
     id,
     numero: formatReference(getString(r, ['numeroFactura', 'numero', 'codigo'], id)),
     cliente: getString(r, ['razonSocial', 'clienteNombre']) || getNestedString(r, ['cliente.nombre']) || '—',
-    reserva: formatReference(r.reservaId),
     subtotal: formatMoney(r.subtotal ?? r.fac_subtotal),
     total: formatMoney(r.total ?? r.totalAmount ?? r.fac_total),
     fecha: formatDate(r.fechaEmision ?? r.fecha ?? r.createdAt),
     estado: getString(r, ['status', 'estado'], 'Emitida') || 'Emitida',
+  };
+}
+
+export function normalizeAdminPago(raw: unknown): AdminTableRow | null {
+  const pago = normalizeAdminPagoDetalle(raw);
+  if (!pago) return null;
+
+  const r = asRecord(raw);
+
+  return {
+    id: pago.id,
+    referencia: pago.referencia,
+    reserva: formatReference(
+      getString(r, ['codigoReserva']) ||
+        getNestedString(r, ['reserva.codigoReserva']) ||
+        r.reservaId,
+    ),
+    monto: pago.monto,
+    metodo: pago.metodo,
+    fecha: pago.fecha,
+    estado: pago.estado,
+  };
+}
+
+export function normalizeAdminFactura(raw: unknown): AdminTableRow | null {
+  const factura = normalizeAdminFacturaDetalle(raw);
+  if (!factura) return null;
+
+  const r = asRecord(raw);
+
+  return {
+    id: factura.id,
+    numero: factura.numero,
+    cliente: factura.cliente,
+    reserva: formatReference(r.reservaId),
+    subtotal: factura.subtotal,
+    total: factura.total,
+    fecha: factura.fecha,
+    estado: factura.estado,
   };
 }
 
