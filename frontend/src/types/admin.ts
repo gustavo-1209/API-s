@@ -101,12 +101,53 @@ export interface AdminFactura {
   estado: string;
 }
 
+export type MetodoPagoAdmin = 'EFECTIVO' | 'TARJETA' | 'TRANSFERENCIA' | 'OTRO';
+
+/** Body POST /admin/pagos */
+export interface RegistrarPagoRequest {
+  reservaId: string;
+  monto: number;
+  metodoPago: MetodoPagoAdmin | string;
+  referencia?: string;
+}
+
+/** Respuesta POST /admin/pagos (normalizada a AdminPago). */
+export type RegistrarPagoResponse = AdminPago;
+
+/** Body PATCH /admin/pagos/:id para confirmar pago. */
+export interface ConfirmarPagoRequest {
+  status: 'COMPLETADO';
+}
+
+/** Respuesta PATCH /admin/pagos/:id (normalizada a AdminPago). */
+export type ConfirmarPagoResponse = AdminPago;
+
+/** Línea de detalle POST /admin/facturas */
+export interface GenerarFacturaDetalleRequest {
+  descripcion: string;
+  cantidad: number;
+  precioUnit: number;
+}
+
+/** Body POST /admin/facturas */
+export interface GenerarFacturaRequest {
+  reservaId: string;
+  pagoId?: string;
+  rucCliente?: string;
+  razonSocial?: string;
+  detalles: GenerarFacturaDetalleRequest[];
+}
+
+/** Respuesta POST /admin/facturas (normalizada a AdminFactura). */
+export type GenerarFacturaResponse = AdminFactura;
+
 /** Resumen de GET /booking/payment/{reservaId}. */
 export interface ResumenPagoReserva {
   reservaId: string;
   status: string;
   statusLabel: string;
   totalPagado: string;
+  totalPagadoNumero: number;
   cantidadPagos: number;
 }
 

@@ -1,3 +1,4 @@
+import { unwrapApiData } from '@/lib/api-unwrap';
 import { obtenerAlquilerDeCache } from '@/lib/alquiler-reserva-cache';
 import type {
   AdminAlquilerActivoIndex,
@@ -529,6 +530,24 @@ export function normalizeAdminPagoDetalle(raw: unknown): AdminPago | null {
   };
 }
 
+/** Normaliza POST /admin/pagos. */
+export function normalizeRegistrarPagoResponse(body: unknown): AdminPago {
+  const pago = normalizeAdminPagoDetalle(unwrapApiData<unknown>(body));
+  if (!pago) {
+    throw new Error('Respuesta inválida al registrar el pago.');
+  }
+  return pago;
+}
+
+/** Normaliza PATCH /admin/pagos/:id. */
+export function normalizeConfirmarPagoResponse(body: unknown): AdminPago {
+  const pago = normalizeAdminPagoDetalle(unwrapApiData<unknown>(body));
+  if (!pago) {
+    throw new Error('Respuesta inválida al confirmar el pago.');
+  }
+  return pago;
+}
+
 export function normalizeAdminFacturaDetalle(raw: unknown): AdminFactura | null {
   const r = asRecord(raw);
   const id = getString(r, ['id']);
@@ -543,6 +562,15 @@ export function normalizeAdminFacturaDetalle(raw: unknown): AdminFactura | null 
     fecha: formatDate(r.fechaEmision ?? r.fecha ?? r.createdAt),
     estado: getString(r, ['status', 'estado'], 'Emitida') || 'Emitida',
   };
+}
+
+/** Normaliza POST /admin/facturas. */
+export function normalizeGenerarFacturaResponse(body: unknown): AdminFactura {
+  const factura = normalizeAdminFacturaDetalle(unwrapApiData<unknown>(body));
+  if (!factura) {
+    throw new Error('Respuesta inválida al generar la factura.');
+  }
+  return factura;
 }
 
 export function normalizeAdminPago(raw: unknown): AdminTableRow | null {
