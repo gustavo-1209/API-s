@@ -7,32 +7,51 @@ const INVENTARIO_URL = process.env['INVENTARIO_SERVICE_URL'] ?? 'http://localhos
 
 async function patchVehiculoStatus(
   vehiculoId: string,
-  data: object,
+  status: string,
   authHeader?: string,
+  options?: { kilometraje?: number },
 ): Promise<void> {
   const response = await fetch(
-    `${INVENTARIO_URL}/api/v1/gustavobenalcazar/vehiculos/${vehiculoId}`,
+    `${INVENTARIO_URL}/api/v1/gustavobenalcazar/vehiculos/booking/${vehiculoId}/status`,
     {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
         Authorization: authHeader ?? '',
       },
-      body: JSON.stringify(data),
+      body: JSON.stringify({ status, ...options }),
     },
   );
 
   if (!response.ok) {
     const errorText = await response.text();
 
-    console.error('[booking-integration] Error actualizando inventario:', {
+    console.error('[booking-integration] Error sincronizando estado del vehículo en inventario:', {
       vehiculoId,
-      status: response.status,
-      body: errorText,
+      statusSolicitado: status,
+      httpStatus:       response.status,
+      body:             errorText,
     });
 
     throw new Error('No se pudo actualizar el vehículo en inventario');
   }
+}
+
+async function syncVehiculoForReservaStatus(
+  vehiculoId: string | null | undefined,
+  reservaStatus: string,
+  authHeader?: string,
+): Promise<void> {
+  if (!vehiculoId) return;
+
+  const vehiculoStatus =
+    reservaStatus === 'CONFIRMADA' ? 'RESERVADO'
+    : reservaStatus === 'CANCELADA' ? 'DISPONIBLE'
+    : null;
+
+  if (!vehiculoStatus) return;
+
+  await patchVehiculoStatus(vehiculoId, vehiculoStatus, authHeader);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -155,6 +174,7 @@ export function createReservaBookingRouter(reservaRepo: ReservaRepository): Rout
   // POST /api/v1/gustavobenalcazar/reservas/booking
   router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     try {
+      // clienteNombre y clienteEmail son opcionales (sin campos en BD; se aceptan sin error)
       const { vehiculoId, clienteId, agenciaId: bodyAgenciaId, fechaInicio, fechaFin } = req.body;
 
       // 1. Presence check
@@ -222,7 +242,18 @@ export function createReservaBookingRouter(reservaRepo: ReservaRepository): Rout
         precioSeguro:  0,
         totalAmount:   precioBase,
         codigoReserva: generarCodigo(),
+        status:        'CONFIRMADA',
       });
+
+      try {
+        await patchVehiculoStatus(vehiculoId, 'RESERVADO', req.headers.authorization);
+      } catch (syncErr) {
+        console.error('[booking-integration] Reserva creada pero falló sincronización del vehículo:', {
+          reservaId:  reserva.id,
+          vehiculoId,
+          syncErr,
+        });
+      }
 
       res.status(201).json({ success: true, data: toReservaBookingDto(reserva) });
     } catch (err) { next(err); }
@@ -251,6 +282,37 @@ export function createReservaBookingRouter(reservaRepo: ReservaRepository): Rout
       }
 
       const currentStatus = reserva.status as string;
+
+      if (currentStatus === nuevoStatus) {
+        if (nuevoStatus === 'CONFIRMADA' || nuevoStatus === 'CANCELADA') {
+          try {
+            await syncVehiculoForReservaStatus(
+              reserva.vehiculoId,
+              nuevoStatus,
+              req.headers.authorization,
+            );
+          } catch (syncErr) {
+            console.error('[booking-integration] Transición idempotente: falló sincronización del vehículo:', {
+              reservaId: reserva.id,
+              vehiculoId: reserva.vehiculoId,
+              status:     nuevoStatus,
+              syncErr,
+            });
+          }
+          res.json({ success: true, data: toReservaBookingDto(reserva) });
+          return;
+        }
+
+        res.status(422).json({
+          success: false,
+          error: {
+            code:    'INVALID_TRANSITION',
+            message: `No se puede cambiar de ${currentStatus} a ${nuevoStatus}`,
+          },
+        });
+        return;
+      }
+
       const allowed = ALLOWED_TRANSITIONS[currentStatus] ?? [];
 
       if (!allowed.includes(nuevoStatus)) {
@@ -265,6 +327,24 @@ export function createReservaBookingRouter(reservaRepo: ReservaRepository): Rout
       }
 
       const updated = await reservaRepo.update(req.params['id'] as string, { status: nuevoStatus });
+
+      if (nuevoStatus === 'CONFIRMADA' || nuevoStatus === 'CANCELADA') {
+        try {
+          await syncVehiculoForReservaStatus(
+            updated.vehiculoId,
+            nuevoStatus,
+            req.headers.authorization,
+          );
+        } catch (syncErr) {
+          console.error('[booking-integration] Reserva actualizada pero falló sincronización del vehículo:', {
+            reservaId:  updated.id,
+            vehiculoId: updated.vehiculoId,
+            status:     nuevoStatus,
+            syncErr,
+          });
+        }
+      }
+
       res.json({ success: true, data: toReservaBookingDto(updated) });
     } catch (err) { next(err); }
   });
@@ -319,7 +399,7 @@ export function createAlquilerBookingRouter(alquilerRepo: AlquilerRepository): R
       if (reserva.vehiculoId) {
         await patchVehiculoStatus(
           reserva.vehiculoId,
-          { status: 'EN_USO' },
+          'EN_USO',
           req.headers.authorization,
         );
       }
@@ -379,8 +459,9 @@ export function createDevolucionBookingRouter(alquilerRepo: AlquilerRepository):
       if (reservaObj?.vehiculoId) {
         await patchVehiculoStatus(
           reservaObj.vehiculoId,
-          { status: 'DISPONIBLE', kilometraje: kmEntrada },
+          'DISPONIBLE',
           req.headers.authorization,
+          { kilometraje: kmEntrada },
         );
       }
 

@@ -33,6 +33,47 @@ export function createVehiculoBookingRouter(repo: VehiculoRepository): Router {
     } catch (err) { next(err); }
   });
 
+  const VEHICLE_STATUSES = ['DISPONIBLE', 'RESERVADO', 'EN_USO', 'MANTENIMIENTO', 'INACTIVO'] as const;
+
+  // PATCH /api/v1/gustavobenalcazar/vehiculos/booking/:id/status — must be before /:id
+  router.patch('/:id/status', async (req, res, next) => {
+    try {
+      const vehiculo = await repo.findById(req.params['id'] as string);
+      if (!vehiculo) {
+        res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: `Vehiculo ${req.params['id']} no encontrado` } });
+        return;
+      }
+
+      const { status, kilometraje } = req.body as { status?: unknown; kilometraje?: unknown };
+      if (typeof status !== 'string' || !VEHICLE_STATUSES.includes(status as typeof VEHICLE_STATUSES[number])) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code:    'VALIDATION_ERROR',
+            message: `status inválido. Valores permitidos: ${VEHICLE_STATUSES.join(', ')}`,
+          },
+        });
+        return;
+      }
+
+      const updateData: { status: string; kilometraje?: number } = { status };
+      if (kilometraje !== undefined && kilometraje !== null) {
+        const km = Number(kilometraje);
+        if (!Number.isFinite(km) || km < 0) {
+          res.status(400).json({
+            success: false,
+            error: { code: 'VALIDATION_ERROR', message: 'kilometraje debe ser un número entero >= 0' },
+          });
+          return;
+        }
+        updateData.kilometraje = km;
+      }
+
+      const updated = await repo.update(vehiculo.id, updateData);
+      res.json({ success: true, data: toBookingDto(updated) });
+    } catch (err) { next(err); }
+  });
+
   // GET /api/v1/gustavobenalcazar/vehiculos/booking/:id/disponibilidad  — must be before /:id
   router.get('/:id/disponibilidad', async (req, res, next) => {
     try {

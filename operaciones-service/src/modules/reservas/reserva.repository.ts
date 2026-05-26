@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, reserva_status } from '@prisma/client';
 
 const RESERVA_INCLUDE = {
   seguro:    true,
@@ -58,6 +58,7 @@ export class ReservaRepository {
     precioSeguro: number;
     totalAmount:  number;
     codigoReserva: string;
+    status?:      reserva_status;
     notas?:       string;
     extras?: Array<{ extraId: string; cantidad: number; precioDia: number; subtotal: number }>;
   }) {
