@@ -27,7 +27,7 @@ jobs:
       - name: Build and push bus-service image
         uses: docker/build-push-action@v6
         with:
-          context: ./bus-service
+          context: .
           file: ./bus-service/Dockerfile
           push: true
           tags: ${{ secrets.ACR_LOGIN_SERVER }}/bus-service:latest

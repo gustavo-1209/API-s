@@ -7,6 +7,7 @@ on:
       - main
     paths:
       - "operaciones-service/**"
+      - "proto/**"
       - ".github/workflows/operaciones-service.yml"
 
 jobs:
@@ -27,7 +28,7 @@ jobs:
       - name: Build and push operaciones-service image
         uses: docker/build-push-action@v6
         with:
-          context: ./operaciones-service
+          context: .
           file: ./operaciones-service/Dockerfile
           push: true
           tags: ${{ secrets.ACR_LOGIN_SERVER }}/operaciones-service:latest
