@@ -1,3 +1,6 @@
+# Build context: raíz del repositorio
+#   docker build -f bus-service/Dockerfile .
+
 # STAGE 1: Build
 FROM node:20-slim AS builder
 
@@ -6,10 +9,10 @@ RUN apt-get update && apt-get install -y ca-certificates \
 
 WORKDIR /app
 
-COPY package*.json ./
+COPY bus-service/package*.json ./
 RUN npm install
 
-COPY . .
+COPY bus-service/ .
 RUN npm run build
 
 # STAGE 2: Runtime
@@ -22,7 +25,7 @@ WORKDIR /app
 
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
-COPY package*.json ./
+COPY bus-service/package*.json ./
 
 EXPOSE 3007
 
