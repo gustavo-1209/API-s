@@ -1,10 +1,12 @@
 import prisma from '../../shared/database/prisma.js';
+import { randomUUID } from 'crypto';
 import { ReservaRepository } from '../reservas/reserva.repository.js';
 import {
   isInventoryGrpcConfigured,
   checkVehicleAvailability,
   reserveVehicle,
 } from '../../grpc/inventory.client.js';
+import { publishReservaBookingV2Events } from '../../shared/messaging/event-publisher.js';
 
 const INVENTARIO_URL = process.env['INVENTARIO_SERVICE_URL'] ?? 'http://localhost:3002';
 
@@ -417,6 +419,15 @@ export async function createReservaBooking(
     authHeader,
     correlationId,
   );
+
+  await publishReservaBookingV2Events(correlationId ?? randomUUID(), {
+    reservaId: reserva.id,
+    vehiculoId: reserva.vehiculoId ?? vehicleIdStr,
+    clienteId: String(clienteId),
+    estado: reserva.status ?? 'CONFIRMADA',
+    totalAmount: Number(reserva.totalAmount),
+    codigoReserva: reserva.codigoReserva ?? '',
+  });
 
   return {
     status: 201,
