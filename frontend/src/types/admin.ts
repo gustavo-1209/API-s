@@ -1,17 +1,82 @@
-/** Mapas id → nombre para enriquecer vehículos. */
+/** Modelo de catálogo con relación a marca (filtro en formulario). */
+export interface AdminModeloCatalog {
+  id: string;
+  nombre: string;
+  marcaId?: string;
+}
+
+export interface AdminTipoCombustible {
+  id: string;
+  nombre: string;
+}
+
+export interface AdminTipoTransmision {
+  id: string;
+  nombre: string;
+}
+
+/** Mapas id → nombre para enriquecer vehículos y formularios admin. */
 export interface AdminCatalogMaps {
   marcas: Map<string, string>;
   modelos: Map<string, string>;
+  modelosDetalle: AdminModeloCatalog[];
   categorias: Map<string, string>;
   agencias: Map<string, string>;
+  tiposCombustible: Map<string, string>;
+  tiposTransmision: Map<string, string>;
 }
 
 export const EMPTY_CATALOG_MAPS: AdminCatalogMaps = {
   marcas: new Map(),
   modelos: new Map(),
+  modelosDetalle: [],
   categorias: new Map(),
   agencias: new Map(),
+  tiposCombustible: new Map(),
+  tiposTransmision: new Map(),
 };
+
+export type VehiculoStatusAdmin =
+  | 'DISPONIBLE'
+  | 'RESERVADO'
+  | 'EN_USO'
+  | 'MANTENIMIENTO'
+  | 'INACTIVO';
+
+/** Body POST /vehiculos (Admin Gateway). */
+export interface CrearVehiculoRequest {
+  agenciaId: string;
+  modeloId: string;
+  categoriaId: string;
+  tipoCombustibleId: string;
+  tipoTransmisionId: string;
+  placa: string;
+  anio: number;
+  precioDia: number;
+  color?: string;
+  kilometraje?: number;
+  numeroPasajeros?: number;
+  imagenUrl?: string;
+  descripcion?: string;
+}
+
+/** Body PATCH /vehiculos/{id} (Admin Gateway). */
+export interface ActualizarVehiculoRequest {
+  agenciaId?: string;
+  modeloId?: string;
+  categoriaId?: string;
+  tipoCombustibleId?: string;
+  tipoTransmisionId?: string;
+  placa?: string;
+  anio?: number;
+  precioDia?: number;
+  color?: string;
+  kilometraje?: number;
+  numeroPasajeros?: number;
+  imagenUrl?: string;
+  descripcion?: string;
+  status?: VehiculoStatusAdmin;
+}
 
 /** Fila normalizada: vehículos (admin). */
 export interface AdminVehiculoRow {
@@ -26,6 +91,19 @@ export interface AdminVehiculoRow {
   imagenUrl: string | null;
   /** Etiqueta compacta para tablas relacionadas (nombre + placa). */
   displayLabel: string;
+  /** IDs y campos para edición (si el backend los envía). */
+  agenciaId: string;
+  modeloId: string;
+  marcaId: string;
+  categoriaId: string;
+  tipoCombustibleId: string;
+  tipoTransmisionId: string;
+  anio: number | null;
+  precioDia: number | null;
+  color: string;
+  kilometraje: number | null;
+  numeroPasajeros: number | null;
+  descripcion: string;
 }
 
 /** Índice reservaId → alquiler activo (admin). */
