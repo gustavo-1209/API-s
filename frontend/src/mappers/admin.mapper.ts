@@ -319,6 +319,16 @@ export function normalizeAdminVehiculo(
   const imagenUrl =
     getString(r, ['imagenUrl', 'imagen_url', 'veh_imagen_url', 'fotoUrl'], '') || null;
 
+  const modeloId = getString(r, ['modeloId', 'mod_id']);
+  let marcaId = getString(r, ['marcaId', 'mar_id']);
+  if (!marcaId) {
+    marcaId = getNestedString(r, ['modelo.marcaId', 'modelo.marca.id']);
+  }
+  if (!marcaId && modeloId) {
+    const detalle = catalogs.modelosDetalle.find((m) => m.id === modeloId);
+    if (detalle?.marcaId) marcaId = detalle.marcaId;
+  }
+
   const row: AdminVehiculoRow = {
     id,
     nombre,
@@ -330,6 +340,18 @@ export function normalizeAdminVehiculo(
     estado: resolveEstado(r),
     imagenUrl,
     displayLabel: '',
+    agenciaId: getString(r, ['agenciaId', 'agencia_id']),
+    modeloId,
+    marcaId,
+    categoriaId: getString(r, ['categoriaId', 'cat_id']),
+    tipoCombustibleId: getString(r, ['tipoCombustibleId', 'tipo_combustible_id']),
+    tipoTransmisionId: getString(r, ['tipoTransmisionId', 'tipo_transmision_id']),
+    anio: getNumber(r, ['anio', 'veh_anio', 'year']),
+    precioDia: precioN,
+    color: getString(r, ['color', 'veh_color']),
+    kilometraje: getNumber(r, ['kilometraje', 'veh_kilometraje', 'km']),
+    numeroPasajeros: getNumber(r, ['numeroPasajeros', 'num_pasajeros', 'pasajeros']),
+    descripcion: getString(r, ['descripcion', 'veh_descripcion']),
   };
 
   row.displayLabel = formatVehiculoDisplayLabel(row);
