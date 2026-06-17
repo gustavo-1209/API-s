@@ -7,6 +7,7 @@ on:
       - main
     paths:
       - "inventario-service/**"
+      - "proto/**"
       - ".github/workflows/inventario-service.yml"
 
 jobs:
@@ -27,7 +28,7 @@ jobs:
       - name: Build and push inventario-service image
         uses: docker/build-push-action@v6
         with:
-          context: ./inventario-service
+          context: .
           file: ./inventario-service/Dockerfile
           push: true
           tags: ${{ secrets.ACR_LOGIN_SERVER }}/inventario-service:latest
