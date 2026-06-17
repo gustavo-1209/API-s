@@ -14,6 +14,7 @@ import {
   createAlquilerBookingRouter,
   createDevolucionBookingRouter,
 } from './modules/booking-integration/booking.routes.js';
+import { createReservaBookingV2Router } from './modules/booking-integration/booking.v2.routes.js';
 import { errorHandler } from './shared/errors/error.middleware.js';
 import { swaggerSpec } from './shared/swagger.js';
 import { authenticate, requireAdmin } from './shared/middlewares/auth.middleware.js';
@@ -108,6 +109,9 @@ app.get('/api/v1/gustavobenalcazar/outbox-events', authenticate, requireAdmin, a
     });
   } catch (err) { next(err); }
 });
+
+// API V2 — booking (idempotencia + correlationId)
+app.use('/api/v2/gustavobenalcazar/reservas/booking', createReservaBookingV2Router(reservaRepository));
 
 // Booking integration routes — registered BEFORE main routers to avoid /:id collision
 app.use('/api/v1/gustavobenalcazar/reservas/booking',    createReservaBookingRouter(reservaRepository));

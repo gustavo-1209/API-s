@@ -1,7 +1,11 @@
 import 'dotenv/config';
 import app from './app.js';
+import { vehiculoRepository } from './shared/container.js';
+import { startGrpcServer } from './grpc/server.js';
 
 const PORT = process.env.PORT ?? 3002;
+
+startGrpcServer(vehiculoRepository);
 
 app.listen(PORT, () => {
   console.log(`🚗 inventario-service corriendo en http://localhost:${PORT}`);
