@@ -11,6 +11,8 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
+    "@grpc/grpc-js": "^1.14.4",
+    "@grpc/proto-loader": "^0.8.1",
     "@prisma/client": "^5.22.0",
     "cors": "^2.8.6",
     "dotenv": "^16.6.1",

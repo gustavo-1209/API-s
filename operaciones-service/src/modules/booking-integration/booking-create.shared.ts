@@ -1,5 +1,10 @@
 import prisma from '../../shared/database/prisma.js';
 import { ReservaRepository } from '../reservas/reserva.repository.js';
+import {
+  isInventoryGrpcConfigured,
+  checkVehicleAvailability,
+  reserveVehicle,
+} from '../../grpc/inventory.client.js';
 
 const INVENTARIO_URL = process.env['INVENTARIO_SERVICE_URL'] ?? 'http://localhost:3002';
 
@@ -65,6 +70,47 @@ async function patchVehiculoStatus(
       body: errorText,
     });
     throw new Error('No se pudo actualizar el vehículo en inventario');
+  }
+}
+
+async function syncVehiculoReservado(
+  vehiculoId: string,
+  reservaId: string,
+  authHeader: string | undefined,
+  correlationId: string | undefined,
+): Promise<void> {
+  if (isInventoryGrpcConfigured()) {
+    try {
+      const result = await reserveVehicle({
+        vehicleId: vehiculoId,
+        reservationId: reservaId,
+        correlationId,
+      });
+
+      if (!result.success) {
+        throw new Error(result.message || 'ReserveVehicle gRPC respondió success=false');
+      }
+
+      return;
+    } catch (grpcErr) {
+      console.warn('[booking-v2] gRPC ReserveVehicle falló, usando fallback REST', {
+        correlationId,
+        reservaId,
+        vehiculoId,
+        error: grpcErr instanceof Error ? grpcErr.message : grpcErr,
+      });
+    }
+  }
+
+  try {
+    await patchVehiculoStatus(vehiculoId, 'RESERVADO', authHeader);
+  } catch (syncErr) {
+    console.error('[booking-integration] Reserva creada pero falló sincronización del vehículo:', {
+      correlationId,
+      reservaId,
+      vehiculoId,
+      syncErr,
+    });
   }
 }
 
@@ -204,31 +250,99 @@ export async function createReservaBooking(
   }
   const { dias } = fechaResult;
 
-  const vehiculo = await fetchVehiculo(String(vehiculoId));
-  if (!vehiculo) {
-    return {
-      status: 404,
-      body: {
-        success: false,
-        error: {
-          code: 'NOT_FOUND',
-          message: `Vehiculo ${String(vehiculoId)} no encontrado`,
-        },
-      },
-    };
+  const vehicleIdStr = String(vehiculoId);
+  const correlationId = options?.correlationId;
+  let vehiculo: Record<string, unknown> | null = null;
+  let usedGrpcAvailability = false;
+
+  if (isInventoryGrpcConfigured()) {
+    try {
+      const availability = await checkVehicleAvailability({
+        vehicleId: vehicleIdStr,
+        startDate: String(fechaInicio),
+        endDate: String(fechaFin),
+        correlationId,
+      });
+
+      usedGrpcAvailability = true;
+
+      if (availability.status === 'NOT_FOUND') {
+        return {
+          status: 404,
+          body: {
+            success: false,
+            error: {
+              code: 'NOT_FOUND',
+              message: `Vehiculo ${vehicleIdStr} no encontrado`,
+            },
+          },
+        };
+      }
+
+      if (!availability.available) {
+        return {
+          status: 422,
+          body: {
+            success: false,
+            error: {
+              code: 'VEHICLE_NOT_AVAILABLE',
+              message: availability.message || 'El vehículo no está disponible',
+            },
+          },
+        };
+      }
+
+      vehiculo = await fetchVehiculo(vehicleIdStr);
+      if (!vehiculo) {
+        return {
+          status: 404,
+          body: {
+            success: false,
+            error: {
+              code: 'NOT_FOUND',
+              message: `Vehiculo ${vehicleIdStr} no encontrado`,
+            },
+          },
+        };
+      }
+    } catch (grpcErr) {
+      console.warn('[booking-v2] gRPC CheckVehicleAvailability falló, usando fallback REST', {
+        correlationId,
+        vehicleId: vehicleIdStr,
+        error: grpcErr instanceof Error ? grpcErr.message : grpcErr,
+      });
+      usedGrpcAvailability = false;
+      vehiculo = null;
+    }
   }
 
-  if (vehiculo.status !== 'DISPONIBLE') {
-    return {
-      status: 422,
-      body: {
-        success: false,
-        error: {
-          code: 'VEHICLE_NOT_AVAILABLE',
-          message: 'El vehículo no está disponible',
+  if (!usedGrpcAvailability) {
+    vehiculo = await fetchVehiculo(vehicleIdStr);
+    if (!vehiculo) {
+      return {
+        status: 404,
+        body: {
+          success: false,
+          error: {
+            code: 'NOT_FOUND',
+            message: `Vehiculo ${vehicleIdStr} no encontrado`,
+          },
         },
-      },
-    };
+      };
+    }
+
+    if (vehiculo.status !== 'DISPONIBLE') {
+      return {
+        status: 422,
+        body: {
+          success: false,
+          error: {
+            code: 'VEHICLE_NOT_AVAILABLE',
+            message: 'El vehículo no está disponible',
+          },
+        },
+      };
+    }
   }
 
   const precioDia = Number(vehiculo.precioDia);
@@ -297,16 +411,12 @@ export async function createReservaBooking(
     status: 'CONFIRMADA',
   });
 
-  try {
-    await patchVehiculoStatus(String(vehiculoId), 'RESERVADO', authHeader);
-  } catch (syncErr) {
-    console.error('[booking-integration] Reserva creada pero falló sincronización del vehículo:', {
-      correlationId: options?.correlationId,
-      reservaId: reserva.id,
-      vehiculoId: String(vehiculoId),
-      syncErr,
-    });
-  }
+  await syncVehiculoReservado(
+    vehicleIdStr,
+    reserva.id,
+    authHeader,
+    correlationId,
+  );
 
   return {
     status: 201,

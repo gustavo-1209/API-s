@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package inventory.v1;
+
+service InventoryService {
+  rpc CheckVehicleAvailability (CheckVehicleAvailabilityRequest) returns (CheckVehicleAvailabilityResponse);
+  rpc ReserveVehicle (ReserveVehicleRequest) returns (ReserveVehicleResponse);
+  rpc ReleaseVehicle (ReleaseVehicleRequest) returns (ReleaseVehicleResponse);
+}
+
+message CheckVehicleAvailabilityRequest {
+  string vehicle_id = 1;
+  string start_date = 2;
+  string end_date = 3;
+  string correlation_id = 4;
+}
+
+message CheckVehicleAvailabilityResponse {
+  bool available = 1;
+  string status = 2;
+  string message = 3;
+}
+
+message ReserveVehicleRequest {
+  string vehicle_id = 1;
+  string reservation_id = 2;
+  string correlation_id = 3;
+}
+
+message ReserveVehicleResponse {
+  bool success = 1;
+  string status = 2;
+  string message = 3;
+}
+
+message ReleaseVehicleRequest {
+  string vehicle_id = 1;
+  string reservation_id = 2;
+  string correlation_id = 3;
+}
+
+message ReleaseVehicleResponse {
+  bool success = 1;
+  string status = 2;
+  string message = 3;
+}
