@@ -42,6 +42,10 @@ class Vehicle {
     required this.description,
     required this.status,
     this.imageUrl,
+    this.disponible = true,
+    this.backendStatus,
+    this.agenciaId,
+    this.moneda,
   });
 
   final String id;
@@ -55,8 +59,21 @@ class Vehicle {
   final String description;
   final VehicleStatus status;
   final String? imageUrl;
+  final bool disponible;
+  final String? backendStatus;
+  final String? agenciaId;
+  final String? moneda;
 
-  String get displayName => '$brand $model';
+  String get displayName => brand.isEmpty ? model : '$brand $model';
+
+  /// API: requiere `disponible == true` y `status == DISPONIBLE`.
+  /// Mocks locales usan solo el enum `status`.
+  bool get canAddToCart {
+    if (backendStatus != null) {
+      return disponible && backendStatus!.toUpperCase() == 'DISPONIBLE';
+    }
+    return status.isAvailable;
+  }
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -70,6 +87,10 @@ class Vehicle {
         'description': description,
         'status': status.name,
         'imageUrl': imageUrl,
+        'disponible': disponible,
+        'backendStatus': backendStatus,
+        'agenciaId': agenciaId,
+        'moneda': moneda,
       };
 
   factory Vehicle.fromJson(Map<String, dynamic> json) => Vehicle(
@@ -84,5 +105,9 @@ class Vehicle {
         description: json['description'] as String,
         status: VehicleStatusExtension.fromString(json['status'] as String),
         imageUrl: json['imageUrl'] as String?,
+        disponible: json['disponible'] as bool? ?? true,
+        backendStatus: json['backendStatus'] as String?,
+        agenciaId: json['agenciaId'] as String?,
+        moneda: json['moneda'] as String?,
       );
 }

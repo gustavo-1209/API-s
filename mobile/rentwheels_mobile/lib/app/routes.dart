@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../features/auth/login_screen.dart';
+import '../features/auth/register_screen.dart';
 import '../features/cart/cart_screen.dart';
 import '../features/catalog/catalog_screen.dart';
 import '../features/home/home_screen.dart';
@@ -84,6 +86,20 @@ GoRouter createRouter() {
           final id = state.pathParameters['id']!;
           return VehicleDetailScreen(vehicleId: id);
         },
+      ),
+      GoRoute(
+        path: '/login',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => LoginScreen(
+          redirectTo: state.uri.queryParameters['redirect'],
+        ),
+      ),
+      GoRoute(
+        path: '/register',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => RegisterScreen(
+          redirectTo: state.uri.queryParameters['redirect'],
+        ),
       ),
     ],
   );

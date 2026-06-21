@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import '../../shared/state/auth_provider.dart';
 import '../../shared/state/cart_provider.dart';
 import '../../shared/state/reservation_provider.dart';
 import '../../shared/widgets/vehicle_card.dart';
@@ -32,12 +33,22 @@ class _CartScreenState extends State<CartScreen> {
     final cart = context.read<CartProvider>();
     if (cart.isEmpty) return;
 
+    final auth = context.read<AuthProvider>();
+    if (!auth.isAuthenticated) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Inicia sesión para crear una reserva.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      context.push('/login?redirect=${Uri.encodeComponent('/cart')}');
+      return;
+    }
+
     setState(() => _isCreating = true);
 
     try {
-      await context
-          .read<ReservationProvider>()
-          .createFromCart(cart.items);
+      await context.read<ReservationProvider>().createFromCart(cart.items);
       await cart.clearCart();
 
       if (mounted) {
@@ -48,6 +59,26 @@ class _CartScreenState extends State<CartScreen> {
           ),
         );
         context.go('/reservations');
+      }
+    } on ReservationException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No se pudo crear la reserva: $e'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _isCreating = false);

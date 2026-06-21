@@ -6,6 +6,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/cart_item.dart';
 import '../models/reservation.dart';
 
+/// Persistencia local de reservas creadas en la app.
+///
+/// Cuando exista `misReservas(clienteId)` en GraphQL, este servicio se
+/// reemplazará por lectura desde API real y el almacenamiento local quedará
+/// solo como caché opcional.
 class LocalReservationService {
   static const _storageKey = 'rentwheels_reservations';
 
@@ -36,6 +41,15 @@ class LocalReservationService {
     return 'RW-$datePart-$random';
   }
 
+  Future<Reservation> saveReservation(Reservation reservation) async {
+    final existing = await loadReservations();
+    existing.removeWhere((r) => r.id == reservation.id);
+    existing.insert(0, reservation);
+    await _saveReservations(existing);
+    return reservation;
+  }
+
+  @Deprecated('Usar flujo GraphQL + saveReservation')
   Future<List<Reservation>> createFromCart(List<CartItem> cartItems) async {
     final existing = await loadReservations();
     final now = DateTime.now();
@@ -58,6 +72,19 @@ class LocalReservationService {
     return newReservations;
   }
 
+  Future<void> clearAllReservations() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_storageKey);
+    } catch (_) {
+      // Ignorar.
+    }
+  }
+
+  /// Cancelación solo local.
+  ///
+  /// Pendiente conectar mutation `cancelarReserva` cuando el backend exponga
+  /// cancelación cliente de forma estable. No promete cancelación backend real.
   Future<Reservation?> cancelReservation(String reservationId) async {
     final reservations = await loadReservations();
     final index = reservations.indexWhere((r) => r.id == reservationId);

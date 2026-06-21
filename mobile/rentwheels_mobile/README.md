@@ -1,76 +1,178 @@
 # RentWheels Mobile
 
-App móvil cliente de **RentWheels**, marketplace de renta de vehículos. Esta fase implementa la experiencia completa del usuario con datos mock y almacenamiento local, sin conexión a APIs reales.
 
-## Descripción
 
-RentWheels Mobile permite explorar un catálogo de vehículos, agregarlos al carrito con fechas de renta, crear reservas locales y gestionar cancelaciones de reservas pendientes. Incluye pantalla de inicio, perfil básico y navegación inferior tipo app de producción.
+App móvil cliente de **RentWheels** con autenticación real, catálogo GraphQL y reservas.
 
-## Flujo implementado
 
-1. **Inicio** — Hero de marca, propuesta de valor, beneficios y pasos de “Cómo funciona”.
-2. **Catálogo** — Lista de vehículos mock con estado visual y acciones según disponibilidad.
-3. **Detalle** — Información completa del vehículo, selector de fechas y agregar al carrito.
-4. **Carrito** — Items persistidos localmente, total estimado y creación de reserva.
-5. **Mis reservas** — Listado local con cancelación solo para reservas `pendiente`.
-6. **Perfil** — Datos mock del cliente con login/logout visual (sin auth real).
 
-## Dependencias
+## API Gateway
 
-| Paquete | Uso |
+
+
+**URL base:** `https://bus-service.politebay-268e19e8.eastus.azurecontainerapps.io`
+
+
+
+| Recurso | URL |
+
 |---------|-----|
-| `go_router` | Navegación declarativa y bottom navigation con `StatefulShellRoute` |
-| `provider` | Estado global de carrito y reservas |
-| `shared_preferences` | Persistencia local de carrito y reservas |
-| `intl` | Formato de fechas y moneda |
 
-## Qué funciona con mock / local
+| Cliente REST | `/api/v1/gustavobenalcazar/cliente` |
 
-- **Vehículos**: `MockVehicleService` + `lib/mocks/mock_vehicles.dart`
-- **Carrito**: `LocalCartService` → `shared_preferences`
-- **Reservas**: `LocalReservationService` → `shared_preferences`
-- **Perfil / auth**: estado visual en memoria, sin backend
+| GraphQL | `/graphql` |
 
-## Pendiente para APIs reales
 
-- Reemplazar `MockVehicleService` por cliente GraphQL/gRPC/API Gateway
-- Sincronizar carrito y reservas con backend
-- Autenticación real (JWT, OAuth, etc.)
-- Validación de disponibilidad en tiempo real
-- Eventos internos vía RabbitMQ (confirmaciones, cambios de estado)
-- Imágenes desde CDN o storage del backend
 
-## Estructura
+## Autenticación cliente (real)
 
-```
-lib/
-├── main.dart
-├── app/           # App, rutas y tema
-├── features/      # Pantallas por feature
-├── shared/        # Modelos, servicios, estado y widgets
-└── mocks/         # Datos mock de vehículos
-```
+
+
+| Acción | Método | Endpoint |
+
+|--------|--------|----------|
+
+| Login | `POST` | `/api/v1/gustavobenalcazar/cliente/auth/login` |
+
+| Registro | `POST` | `/api/v1/gustavobenalcazar/cliente/auth/register` |
+
+
+
+La sesión (token, clienteId, nombre, email) se guarda en `shared_preferences`.
+
+
+
+## GraphQL conectado
+
+
+
+| Operación | Uso |
+
+|-----------|-----|
+
+| `vehiculosDisponibles` | Catálogo |
+
+| `vehiculo(id)` | Detalle |
+
+| `disponibilidadVehiculo(id)` | Validación pre-reserva |
+
+| `crearReserva(input)` | Crear reserva (requiere sesión) |
+
+
+
+Las peticiones GraphQL envían `Authorization: Bearer <token>` cuando hay sesión activa.
+
+
+
+## Sincronización de catálogo
+
+
+
+### Ocultamiento optimista (tras reservar)
+
+
+
+1. El `vehicleId` se guarda en `rentwheels_reserved_vehicle_ids`.
+
+2. El vehículo desaparece de inmediato en la UI.
+
+3. Se refresca `vehiculosDisponibles` desde GraphQL.
+
+
+
+### GraphQL como fuente de verdad (al refrescar)
+
+
+
+Al cargar o actualizar el catálogo:
+
+
+
+1. Se consulta `vehiculosDisponibles`.
+
+2. Se reconcilian los IDs ocultos localmente.
+
+3. Si un vehículo oculto localmente **vuelve a aparecer** en GraphQL con `disponible == true` y `status == DISPONIBLE`, se elimina de la lista local y **vuelve a mostrarse**.
+
+
+
+Esto permite que, cuando el panel admin completa una reserva/devolución y el backend marca el vehículo como DISPONIBLE, Flutter lo muestre de nuevo al pulsar **Actualizar**, al volver al catálogo, o al iniciar/cerrar sesión.
+
+
+
+### Cancelación local
+
+
+
+Al cancelar una reserva **pendiente** (solo local), se elimina el `vehicleId` de la lista oculta y se recarga el catálogo.
+
+
+
+**Pendiente futuro:** WebSocket `vehiculo:actualizado` y cancelación real en backend.
+
+
+
+## Limpiar datos locales (pruebas)
+
+
+
+En **Perfil → Limpiar datos locales** se borran:
+
+
+
+- Carrito
+
+- Reservas locales
+
+- Vehículos ocultos localmente
+
+
+
+No cierra la sesión. Pide confirmación antes de ejecutar.
+
+
+
+## Qué sigue local
+
+
+
+- **Carrito** → `shared_preferences`
+
+- **Mis reservas** → local (pendiente `misReservas(clienteId)`)
+
+- **Cancelar reserva** → solo local
+
+
 
 ## Comandos
 
+
+
 ```bash
+
 flutter pub get
+
 flutter analyze
-flutter run -d chrome
+
+flutter test
+
+flutter run -d chrome --dart-define=API_GATEWAY_URL=https://bus-service.politebay-268e19e8.eastus.azurecontainerapps.io
+
 ```
 
-Para dispositivo físico o emulador:
 
-```bash
-flutter run
-```
 
-## Pruebas manuales recomendadas
+## Pruebas manuales
 
-1. Abrir Inicio y pulsar “Buscar vehículo” → debe ir al Catálogo.
-2. Agregar un vehículo disponible al carrito desde catálogo o detalle.
-3. Verificar que un vehículo no disponible muestra botón deshabilitado.
-4. Crear reserva desde Carrito → redirección a Mis reservas + SnackBar.
-5. Cancelar una reserva pendiente con confirmación.
-6. Verificar que reservas no pendientes no muestran botón cancelar.
-7. Cerrar y reabrir la app (Chrome) → carrito y reservas persisten.
+
+
+1. Reservar vehículo → desaparece del catálogo.
+
+2. Desde admin web, completar reserva/devolución hasta que el vehículo esté DISPONIBLE.
+
+3. En Flutter, pulsar **Actualizar** en catálogo → el vehículo debe volver a aparecer.
+
+4. Cancelar reserva pendiente local → vehículo vuelve al catálogo.
+
+5. Perfil → **Limpiar datos locales** → carrito y reservas vacíos, catálogo reconciliado.
+

@@ -1,42 +1,67 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 
-class ProfileScreen extends StatefulWidget {
+import '../../shared/services/local_data_cleanup_service.dart';
+import '../../shared/state/auth_provider.dart';
+import '../../shared/state/cart_provider.dart';
+import '../../shared/state/catalog_provider.dart';
+import '../../shared/state/reservation_provider.dart';
+
+class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
-  @override
-  State<ProfileScreen> createState() => _ProfileScreenState();
-}
-
-class _ProfileScreenState extends State<ProfileScreen> {
-  bool _isLoggedIn = false;
-
-  static const _mockName = 'María González';
-  static const _mockEmail = 'maria.gonzalez@email.com';
-
-  void _login() {
-    setState(() => _isLoggedIn = true);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Sesión iniciada (mock)'),
-        behavior: SnackBarBehavior.floating,
+  Future<void> _confirmClearLocalData(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Limpiar datos locales'),
+        content: const Text(
+          'Se eliminarán el carrito, las reservas guardadas en este dispositivo '
+          'y los vehículos ocultos localmente. Tu sesión no se cerrará.\n\n'
+          '¿Deseas continuar?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Limpiar'),
+          ),
+        ],
       ),
     );
-  }
 
-  void _logout() {
-    setState(() => _isLoggedIn = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Sesión cerrada (mock)'),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    if (confirmed != true || !context.mounted) return;
+
+    final cleanup = context.read<LocalDataCleanupService>();
+    final cart = context.read<CartProvider>();
+    final reservations = context.read<ReservationProvider>();
+    final catalog = context.read<CatalogProvider>();
+
+    await cleanup.clearAllLocalData();
+    await cart.loadCart();
+    await reservations.loadReservations();
+    await catalog.loadCatalog();
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Datos locales eliminados correctamente.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final auth = context.watch<AuthProvider>();
+    final session = auth.session;
 
     return SafeArea(
       child: SingleChildScrollView(
@@ -67,14 +92,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      _isLoggedIn ? _mockName : 'Invitado',
+                      auth.isAuthenticated
+                          ? session!.displayName
+                          : 'Invitado',
                       style: theme.textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      _isLoggedIn ? _mockEmail : 'Inicia sesión para ver tu perfil',
+                      auth.isAuthenticated
+                          ? (session!.email ?? '')
+                          : 'Inicia sesión para reservar vehículos',
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                       ),
@@ -85,27 +114,54 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
             const SizedBox(height: 24),
-            if (!_isLoggedIn)
+            if (!auth.isAuthenticated) ...[
               FilledButton.icon(
-                onPressed: _login,
+                onPressed: () => context.push('/login'),
                 icon: const Icon(Icons.login),
                 label: const Text('Iniciar sesión'),
-              )
-            else ...[
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () => context.push('/register'),
+                icon: const Icon(Icons.person_add_outlined),
+                label: const Text('Crear cuenta'),
+              ),
+            ] else ...[
+              if (session!.email != null)
+                _ProfileInfoTile(
+                  icon: Icons.email_outlined,
+                  label: 'Correo',
+                  value: session.email!,
+                ),
+              const SizedBox(height: 8),
               _ProfileInfoTile(
                 icon: Icons.badge_outlined,
                 label: 'Nombre',
-                value: _mockName,
+                value: session.displayName,
               ),
-              const SizedBox(height: 8),
-              _ProfileInfoTile(
-                icon: Icons.email_outlined,
-                label: 'Correo',
-                value: _mockEmail,
-              ),
+              if (session.role != null) ...[
+                const SizedBox(height: 8),
+                _ProfileInfoTile(
+                  icon: Icons.verified_user_outlined,
+                  label: 'Rol',
+                  value: session.role!,
+                ),
+              ],
               const SizedBox(height: 24),
               OutlinedButton.icon(
-                onPressed: _logout,
+                onPressed: () async {
+                  final catalog = context.read<CatalogProvider>();
+                  await auth.logout();
+                  if (!context.mounted) return;
+                  await catalog.loadCatalog();
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Sesión cerrada correctamente.'),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                },
                 icon: const Icon(Icons.logout),
                 label: const Text('Cerrar sesión'),
                 style: OutlinedButton.styleFrom(
@@ -115,25 +171,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ],
             const SizedBox(height: 32),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(12),
+            Text(
+              'Datos en este dispositivo',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: colorScheme.onSurfaceVariant,
               ),
-              child: Row(
-                children: [
-                  Icon(Icons.info_outline, color: colorScheme.onSurfaceVariant),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'La autenticación real se conectará en una fase posterior.',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                ],
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: () => _confirmClearLocalData(context),
+              icon: const Icon(Icons.cleaning_services_outlined, size: 18),
+              label: const Text('Limpiar datos locales'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Útil para pruebas: borra carrito, reservas locales y vehículos ocultos.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
               ),
             ),
           ],

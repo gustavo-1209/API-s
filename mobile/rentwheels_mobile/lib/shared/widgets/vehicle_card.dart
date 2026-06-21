@@ -22,7 +22,7 @@ class VehicleCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isAvailable = vehicle.status.isAvailable;
+    final isAvailable = vehicle.canAddToCart;
 
     return Card(
       clipBehavior: Clip.antiAlias,
