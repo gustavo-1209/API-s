@@ -4,8 +4,10 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../../shared/models/vehicle.dart';
-import '../../shared/services/mock_vehicle_service.dart';
+import '../../shared/services/local_reserved_vehicle_service.dart';
+import '../../shared/services/mobile_vehicle_api_service.dart';
 import '../../shared/state/cart_provider.dart';
+import '../../shared/state/catalog_provider.dart';
 import '../../shared/widgets/status_chip.dart';
 import '../../shared/widgets/vehicle_card.dart';
 
@@ -18,9 +20,22 @@ class VehicleDetailScreen extends StatefulWidget {
   State<VehicleDetailScreen> createState() => _VehicleDetailScreenState();
 }
 
+class _VehicleDetailData {
+  const _VehicleDetailData({
+    required this.vehicle,
+    required this.canAddToCart,
+    this.unavailableMessage,
+    this.isLocallyReserved = false,
+  });
+
+  final Vehicle vehicle;
+  final bool canAddToCart;
+  final String? unavailableMessage;
+  final bool isLocallyReserved;
+}
+
 class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
-  final _service = MockVehicleService();
-  late Future<Vehicle?> _vehicleFuture;
+  Future<_VehicleDetailData>? _detailFuture;
 
   late DateTime _startDate;
   late DateTime _endDate;
@@ -31,10 +46,67 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
   @override
   void initState() {
     super.initState();
-    _vehicleFuture = _service.getVehicleById(widget.vehicleId);
     final now = DateTime.now();
     _startDate = DateTime(now.year, now.month, now.day + 1);
     _endDate = DateTime(now.year, now.month, now.day + 3);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _detailFuture ??= _loadDetail();
+  }
+
+  Future<_VehicleDetailData> _loadDetail() async {
+    final api = context.read<MobileVehicleApiService>();
+    final reservedService = context.read<LocalReservedVehicleService>();
+    final catalog = context.read<CatalogProvider>();
+
+    final reservedIds = catalog.reservedVehicleIds.isNotEmpty
+        ? catalog.reservedVehicleIds
+        : (await reservedService.getReservedVehicleIds()).toSet();
+
+    final isLocallyReserved = reservedIds.contains(widget.vehicleId);
+
+    final vehicle = await api.getVehicleById(widget.vehicleId);
+    if (vehicle == null) {
+      throw StateError('not_found');
+    }
+
+    if (isLocallyReserved) {
+      return _VehicleDetailData(
+        vehicle: vehicle,
+        canAddToCart: false,
+        isLocallyReserved: true,
+        unavailableMessage: 'Este vehículo ya fue reservado recientemente.',
+      );
+    }
+
+    try {
+      final availability = await api.checkAvailability(widget.vehicleId);
+      if (!availability.isAvailableForRent) {
+        return _VehicleDetailData(
+          vehicle: vehicle,
+          canAddToCart: false,
+          unavailableMessage: availability.mensaje.isNotEmpty
+              ? availability.mensaje
+              : 'Este vehículo no está disponible para reservar.',
+        );
+      }
+    } catch (_) {
+      // Si falla disponibilidad, usar estado del vehículo.
+    }
+
+    return _VehicleDetailData(
+      vehicle: vehicle,
+      canAddToCart: vehicle.canAddToCart,
+    );
+  }
+
+  void _retry() {
+    setState(() {
+      _detailFuture = _loadDetail();
+    });
   }
 
   Future<void> _pickDate({required bool isStart}) async {
@@ -92,30 +164,60 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
         ),
         title: const Text('Detalle del vehículo'),
       ),
-      body: FutureBuilder<Vehicle?>(
-        future: _vehicleFuture,
+      body: FutureBuilder<_VehicleDetailData>(
+        future: _detailFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          final vehicle = snapshot.data;
-          if (vehicle == null) {
+          if (snapshot.hasError) {
+            if (snapshot.error.toString().contains('not_found')) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text('Vehículo no encontrado'),
+                    const SizedBox(height: 16),
+                    FilledButton(
+                      onPressed: () => context.pop(),
+                      child: const Text('Volver'),
+                    ),
+                  ],
+                ),
+              );
+            }
+
             return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text('Vehículo no encontrado'),
-                  const SizedBox(height: 16),
-                  FilledButton(
-                    onPressed: () => context.pop(),
-                    child: const Text('Volver'),
-                  ),
-                ],
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.error_outline,
+                      size: 56,
+                      color: theme.colorScheme.error,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'No se pudo cargar el vehículo',
+                      style: theme.textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 24),
+                    FilledButton.icon(
+                      onPressed: _retry,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Reintentar'),
+                    ),
+                  ],
+                ),
               ),
             );
           }
 
+          final detail = snapshot.data!;
+          final vehicle = detail.vehicle;
           final days = _endDate.difference(_startDate).inDays + 1;
           final estimatedTotal = vehicle.pricePerDay * days;
 
@@ -149,34 +251,67 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
-                                  Text(
-                                    'Año ${vehicle.year}',
-                                    style: theme.textTheme.bodyMedium?.copyWith(
-                                      color: theme.colorScheme.onSurfaceVariant,
+                                  if (vehicle.year > 0)
+                                    Text(
+                                      'Año ${vehicle.year}',
+                                      style: theme.textTheme.bodyMedium?.copyWith(
+                                        color: theme.colorScheme.onSurfaceVariant,
+                                      ),
                                     ),
-                                  ),
                                 ],
                               ),
                             ),
                             StatusChip.vehicle(status: vehicle.status),
                           ],
                         ),
+                        if (detail.unavailableMessage != null) ...[
+                          const SizedBox(height: 16),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.errorContainer
+                                  .withValues(alpha: 0.6),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.block,
+                                  size: 20,
+                                  color: theme.colorScheme.onErrorContainer,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    detail.unavailableMessage!,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.onErrorContainer,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 20),
                         _InfoRow(
                           icon: Icons.category_outlined,
                           label: 'Categoría',
                           value: vehicle.category,
                         ),
-                        _InfoRow(
-                          icon: Icons.settings_outlined,
-                          label: 'Transmisión',
-                          value: vehicle.transmission,
-                        ),
-                        _InfoRow(
-                          icon: Icons.local_gas_station_outlined,
-                          label: 'Combustible',
-                          value: vehicle.fuel,
-                        ),
+                        if (vehicle.transmission != 'No especificado')
+                          _InfoRow(
+                            icon: Icons.settings_outlined,
+                            label: 'Transmisión',
+                            value: vehicle.transmission,
+                          ),
+                        if (vehicle.fuel != 'No especificado')
+                          _InfoRow(
+                            icon: Icons.local_gas_station_outlined,
+                            label: 'Combustible',
+                            value: vehicle.fuel,
+                          ),
                         _InfoRow(
                           icon: Icons.attach_money,
                           label: 'Precio por día',
@@ -191,7 +326,9 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          vehicle.description,
+                          vehicle.description.isNotEmpty
+                              ? vehicle.description
+                              : 'Sin descripción disponible.',
                           style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
                         ),
                         const SizedBox(height: 24),
@@ -208,7 +345,9 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
                               child: _DateSelector(
                                 label: 'Inicio',
                                 date: _dateFormat.format(_startDate),
-                                onTap: () => _pickDate(isStart: true),
+                                onTap: detail.canAddToCart
+                                    ? () => _pickDate(isStart: true)
+                                    : () {},
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -216,7 +355,9 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
                               child: _DateSelector(
                                 label: 'Fin',
                                 date: _dateFormat.format(_endDate),
-                                onTap: () => _pickDate(isStart: false),
+                                onTap: detail.canAddToCart
+                                    ? () => _pickDate(isStart: false)
+                                    : () {},
                               ),
                             ),
                           ],
@@ -234,7 +375,8 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
                           width: double.infinity,
                           padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
-                            color: theme.colorScheme.tertiaryContainer.withValues(alpha: 0.5),
+                            color: theme.colorScheme.tertiaryContainer
+                                .withValues(alpha: 0.5),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Row(
@@ -263,14 +405,16 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
                 Padding(
                   padding: const EdgeInsets.all(20),
                   child: FilledButton.icon(
-                    onPressed: vehicle.status.isAvailable
+                    onPressed: detail.canAddToCart
                         ? () => _addToCart(vehicle)
                         : null,
                     icon: const Icon(Icons.add_shopping_cart),
                     label: Text(
-                      vehicle.status.isAvailable
+                      detail.canAddToCart
                           ? 'Agregar al carrito'
-                          : vehicle.status.label,
+                          : detail.isLocallyReserved
+                              ? 'Ya reservado'
+                              : vehicle.status.label,
                     ),
                   ),
                 ),
