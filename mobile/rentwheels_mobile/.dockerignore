@@ -1,0 +1,15 @@
+﻿.dart_tool/
+build/
+.git/
+.gitignore
+
+android/
+ios/
+linux/
+macos/
+windows/
+
+test/
+*.log
+*.tmp
+.DS_Store
