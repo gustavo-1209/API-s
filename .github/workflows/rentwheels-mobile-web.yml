@@ -18,6 +18,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.2"
+          channel: "stable"
+          cache: true
+
+      - name: Flutter pub get
+        working-directory: mobile/rentwheels_mobile
+        run: flutter pub get
+
+      - name: Build Flutter Web
+        working-directory: mobile/rentwheels_mobile
+        run: flutter build web --release
+
       - name: Login to Azure Container Registry
         uses: docker/login-action@v3
         with:
